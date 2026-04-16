@@ -5,7 +5,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* NearHelp brand tokens */
+  /* AetherNet brand tokens */
   --brand: #161618;
   --brand-foreground: #ffffff;
   --neon: #22c55e;
