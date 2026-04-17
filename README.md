@@ -168,7 +168,6 @@ Raise SOS (typed + contextual details)
 | **JSON Web Tokens** | 9.x | Access token auth (httpOnly refresh cookies) |
 | **bcryptjs** | 3.x | Password hashing |
 | **Google Gemini API** | REST | AI first-response guidance + chat |
-| **Anthropic Claude API** | SDK 0.78 | AI fallback model |
 | **cookie-parser** | 1.4.x | Cookie handling for refresh tokens |
 | **dotenv** | 17.x | Environment variable management |
 
@@ -269,7 +268,7 @@ SUPABASE_SERVICE_KEY=your-supabase-service-role-key
 ACCESS_TOKEN_SECRET=your-jwt-access-secret
 REFRESH_TOKEN_SECRET=your-jwt-refresh-secret
 GEMINI_API_KEY=your-google-gemini-api-key
-ANTHROPIC_API_KEY=your-anthropic-api-key   # optional Claude fallback
+
 ```
 
 ### Frontend — `frontend/.env.local`
