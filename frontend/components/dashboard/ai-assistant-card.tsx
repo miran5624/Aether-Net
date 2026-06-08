@@ -161,15 +161,38 @@ export default function AiAssistantCard({ guidance, activeSOS }: { guidance?: st
     }
   }, [guidance]);
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     const text = input.trim();
     if (!text) return;
     setInput("");
 
     setMessages(prev => [...prev, { role: "user", text }]);
-    // Instant local reply — no network, no API
-    const reply = getReply(text);
-    setMessages(prev => [...prev, { role: "assistant", text: reply }]);
+
+    try {
+      // Call Gemini API
+      const response = await fetch('/api/gemini', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [{ 
+                text: `You are an emergency crisis assistant. The user is asking: "${text}". Provide clear, concise, actionable emergency guidance. If it's a medical emergency, give first aid steps. If it's a safety threat, give safety instructions. Include relevant emergency numbers for India (Police: 100, Fire: 101, Ambulance: 108, National Emergency: 112).`
+              }]
+            }
+          ]
+        })
+      });
+
+      const data = await response.json();
+      const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || getReply(text);
+      setMessages(prev => [...prev, { role: "assistant", text: reply }]);
+    } catch (error) {
+      console.error('Gemini API error:', error);
+      // Fallback to local keyword engine if API fails
+      const reply = getReply(text);
+      setMessages(prev => [...prev, { role: "assistant", text: reply }]);
+    }
   };
 
   return (
@@ -194,8 +217,8 @@ export default function AiAssistantCard({ guidance, activeSOS }: { guidance?: st
               </div>
             )}
             <div className={`max-w-[82%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed whitespace-pre-line ${msg.role === "user"
-              ? "bg-[#161618] text-white rounded-tr-sm"
-              : "bg-[#F7F7F8] text-black rounded-tl-sm"
+                ? "bg-[#161618] text-white rounded-tr-sm"
+                : "bg-[#F7F7F8] text-black rounded-tl-sm"
               }`}>
               {msg.text}
             </div>

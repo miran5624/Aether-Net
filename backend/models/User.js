@@ -37,8 +37,15 @@ const UserSchema = new mongoose.Schema({
         enum: ['Medical', 'Car Diagnosis Skill', 'None'],
     }],
     location: {
-        x: { type: Number, default: 0 },
-        y: { type: Number, default: 0 },
+        lat: { type: Number, default: 28.6139 },
+        lng: { type: Number, default: 77.2090 },
+    },
+    skillVerificationStatus: {
+        Medical: {
+            type: String,
+            enum: ['pending', 'verified', 'rejected'],
+            default: 'pending'
+        }
     },
     guardians: [{
         type: mongoose.Schema.Types.ObjectId,
@@ -58,7 +65,7 @@ const UserSchema = new mongoose.Schema({
     },
     trustScore: {
         type: Number,
-        default: 5.0,
+        default: 0.0,
     },
     totalRatings: {
         type: Number,

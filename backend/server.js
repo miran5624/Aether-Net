@@ -1,16 +1,12 @@
-const express = require('express');
 const dotenv = require('dotenv');
-const cors = require('cors');
-const cookieParser = require('cookie-parser');
-const connectDB = require('./config/db');
-
-// Load env vars
 dotenv.config();
 
-// Connect to database
-connectDB();
+const express = require('express');
+const cors = require('cors');
+const cookieParser = require('cookie-parser');
 
 const app = express();
+
 
 // Body parser
 app.use(express.json());
@@ -20,16 +16,20 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 
 // Enable CORS
-app.use(
-    cors({
-        origin: process.env.CLIENT_URL || 'http://localhost:3000',
-        credentials: true,
-    })
-);
+app.use(cors({
+    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    credentials: true,
+}));
 
 // Mount routers
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/sos', require('./routes/sos'));
+app.use('/api/map', require('./routes/map'));
+app.use('/api/ratings', require('./routes/ratings'));
+app.use('/api/welfare', require('./routes/welfare'));
+app.use('/api/admin', require('./routes/admin'));
+app.use('/api/notifications', require('./routes/notifications'));
 
 const PORT = process.env.PORT || 5000;
 
@@ -45,18 +45,13 @@ const io = new Server(server, {
     }
 });
 
-// Set io globally so controllers can use it
+global.io = io;
 app.set('io', io);
 
-io.on('connection', (socket) => {
-    console.log(`Socket connected: ${socket.id}`);
+require('./sockets')(io);
 
-    socket.on('disconnect', () => {
-        console.log(`Socket disconnected: ${socket.id}`);
-    });
+server.listen(PORT, () => {
+    if (process.env.NODE_ENV !== 'production') {
+        console.log(`🚀 Server running on port ${PORT}`);
+    }
 });
-
-server.listen(
-    PORT,
-    console.log(`Server running on port ${PORT}`)
-);

@@ -1,258 +1,203 @@
-const User = require('../models/User');
+const supabase = require('../config/supabase');
 
-// @desc    Get user profile
-// @route   GET /api/users/profile
-// @access  Private
+const VALID_SKILLS = [
+    'CPR Trained',
+    'Medical / First Aid',
+    'Firefighting / Fire Safety',
+    'Search & Rescue',
+    'Mental Health Support',
+    'Counselling / Crisis Support',
+    'Car / Vehicle Diagnosis',
+    'Electrical Emergency',
+    'Structural / Civil Emergency',
+    'Legal Aid',
+    'Child Safety',
+    'Elderly Care',
+    'Disaster Management',
+    'Swimming / Water Rescue',
+    'Security / Crowd Control',
+    'Food & Shelter Aid',
+    'Translation / Language Aid',
+    'None',
+];
+
+// @route GET /api/users/profile
 const getProfile = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id).select('-password').populate('guardians', 'name email phone');
-        if (user) {
-            res.json(user);
-        } else {
-            res.status(404).json({ message: 'User not found' });
+        const { data: user } = await supabase.from('users')
+            .select('id, name, email, phone, age, blood_group, health_conditions, skills, lat, lng, guardians, trust_score, total_ratings, is_physically_disabled, skill_verification, created_at, false_alert_count, is_suspended')
+            .eq('id', req.user.id).single();
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        // Hydrate guardians
+        let guardiansData = [];
+        if (user.guardians?.length) {
+            const { data: gs } = await supabase.from('users').select('id, name, email, phone').in('id', user.guardians);
+            guardiansData = gs || [];
         }
+        res.json({ ...user, _id: user.id, location: { lat: user.lat, lng: user.lng }, guardiansData });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ message: 'Server error' });
     }
 };
 
-// @desc    Update user profile
-// @route   PUT /api/users/profile
-// @access  Private
+// @route PUT /api/users/profile
 const updateProfile = async (req, res) => {
     const { name, phone, age, isPhysicallyDisabled, bloodGroup, healthConditions } = req.body;
-
     try {
-        const user = await User.findById(req.user._id);
+        const updates = {};
+        if (name !== undefined) updates.name = name;
+        if (phone !== undefined) updates.phone = phone;
+        if (age !== undefined) updates.age = parseInt(age) || null;
+        if (isPhysicallyDisabled !== undefined) updates.is_physically_disabled = isPhysicallyDisabled;
+        if (bloodGroup !== undefined) updates.blood_group = bloodGroup;
+        if (healthConditions !== undefined) updates.health_conditions = healthConditions;
 
-        if (user) {
-            user.name = name || user.name;
-            user.phone = phone !== undefined ? phone : user.phone;
-            user.age = age !== undefined ? age : user.age;
-            user.isPhysicallyDisabled = isPhysicallyDisabled !== undefined ? isPhysicallyDisabled : user.isPhysicallyDisabled;
-            user.bloodGroup = bloodGroup !== undefined ? bloodGroup : user.bloodGroup;
-            user.healthConditions = healthConditions !== undefined ? healthConditions : user.healthConditions;
-
-            const updatedUser = await user.save();
-            const userToReturn = updatedUser.toObject();
-            delete userToReturn.password;
-
-            res.json(userToReturn);
-        } else {
-            res.status(404).json({ message: 'User not found' });
-        }
+        const { data: user } = await supabase.from('users').update(updates).eq('id', req.user.id).select().single();
+        res.json({ ...user, _id: user.id });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ message: 'Server error' });
     }
 };
 
-// @desc    Update user skills
-// @route   PUT /api/users/skills
-// @access  Private
+// @route PUT /api/users/skills
 const updateSkills = async (req, res) => {
     const { skills } = req.body;
-
     try {
-        const validSkills = ['Medical', 'Car Diagnosis Skill', 'None'];
-        if (!Array.isArray(skills)) {
-            return res.status(400).json({ message: 'Skills must be an array' });
-        }
+        if (!Array.isArray(skills)) return res.status(400).json({ message: 'Skills must be an array' });
+        const isValid = skills.every(s => VALID_SKILLS.includes(s));
+        if (!isValid) return res.status(400).json({ message: 'Invalid skills provided' });
 
-        const isValid = skills.every(skill => validSkills.includes(skill));
-        if (!isValid) {
-            return res.status(400).json({ message: 'Invalid skills provided' });
-        }
-
-        const user = await User.findById(req.user._id);
-        if (user) {
-            user.skills = skills;
-            const updatedUser = await user.save();
-
-            const userToReturn = updatedUser.toObject();
-            delete userToReturn.password;
-
-            res.json(userToReturn);
-        } else {
-            res.status(404).json({ message: 'User not found' });
-        }
+        const { data: user } = await supabase.from('users').update({ skills }).eq('id', req.user.id).select().single();
+        res.json({ ...user, _id: user.id });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ message: 'Server error' });
     }
 };
 
-// @desc    Update user location
-// @route   PUT /api/users/location
-// @access  Private
+// @route PUT /api/users/location
 const updateLocation = async (req, res) => {
-    const { x, y } = req.body;
-
-    if (typeof x !== 'number' || typeof y !== 'number' || x < 0 || x > 1000 || y < 0 || y > 1000) {
-        return res.status(400).json({ message: 'Invalid coordinates. x and y must be numbers between 0 and 1000.' });
-    }
-
+    const { lat, lng } = req.body;
     try {
-        const user = await User.findById(req.user._id);
-        if (user) {
-            user.location = { x, y };
-            const updatedUser = await user.save();
-
-            const io = req.app.get('io');
-            if (io) {
-                io.emit('location:update', { userId: user._id, x, y });
-            }
-
-            res.json(updatedUser.location);
-        } else {
-            res.status(404).json({ message: 'User not found' });
-        }
+        if (lat === undefined || lng === undefined) return res.status(400).json({ message: 'lat and lng required' });
+        const { data: user } = await supabase.from('users')
+            .update({
+                lat: parseFloat(lat),
+                lng: parseFloat(lng),
+                is_online: true,
+                last_seen: new Date().toISOString()
+            })
+            .eq('id', req.user.id)
+            .select()
+            .single();
+        res.json({ ...user, _id: user.id, location: { lat: user.lat, lng: user.lng } });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ message: 'Server error' });
     }
 };
 
-// @desc    Get nearby users
-// @route   GET /api/users/nearby
-// @access  Private
-const getNearbyUsers = async (req, res) => {
-    const x = parseFloat(req.query.x);
-    const y = parseFloat(req.query.y);
-    const radius = parseFloat(req.query.radius) || 500;
-
-    if (isNaN(x) || isNaN(y)) {
-        return res.status(400).json({ message: 'Please provide valid x and y coordinates' });
-    }
-
-    try {
-        // Find online, non-suspended users
-        const users = await User.find({ isOnline: true, isSuspended: false })
-            .select('id name skills location trustScore isOnline');
-
-        // Filter by Euclidean distance
-        const nearbyUsers = users.filter(user => {
-            const distance = Math.sqrt(Math.pow(user.location.x - x, 2) + Math.pow(user.location.y - y, 2));
-            return distance <= radius;
-        });
-
-        res.json(nearbyUsers);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Server error' });
-    }
-};
-
-// @desc    Add a guardian
-// @route   POST /api/users/guardians
-// @access  Private
-const addGuardian = async (req, res) => {
-    const { guardianEmail } = req.body;
-
-    if (!guardianEmail) {
-        return res.status(400).json({ message: 'Please provide guardian email' });
-    }
-
-    if (req.user.email === guardianEmail.toLowerCase()) {
-        return res.status(400).json({ message: 'Cannot add yourself as a guardian' });
-    }
-
-    try {
-        const guardianUser = await User.findOne({ email: guardianEmail.toLowerCase() });
-
-        if (!guardianUser) {
-            return res.status(404).json({ message: 'User not found with this email' });
-        }
-
-        const currentUser = await User.findById(req.user._id);
-
-        if (currentUser.guardians.includes(guardianUser._id)) {
-            return res.status(400).json({ message: 'User is already a guardian' });
-        }
-
-        if (currentUser.guardians.length >= 5) {
-            return res.status(400).json({ message: 'Maximum of 5 guardians allowed' });
-        }
-
-        currentUser.guardians.push(guardianUser._id);
-        await currentUser.save();
-
-        await currentUser.populate('guardians', 'name email phone');
-
-        res.json(currentUser.guardians);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Server error' });
-    }
-};
-
-// @desc    Remove a guardian
-// @route   DELETE /api/users/guardians/:guardianId
-// @access  Private
-const removeGuardian = async (req, res) => {
-    try {
-        const currentUser = await User.findById(req.user._id);
-
-        currentUser.guardians = currentUser.guardians.filter(
-            (id) => id.toString() !== req.params.guardianId
-        );
-
-        await currentUser.save();
-
-        await currentUser.populate('guardians', 'name email phone');
-
-        res.json(currentUser.guardians);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Server error' });
-    }
-};
-
-// @desc    Get user guardians
-// @route   GET /api/users/guardians
-// @access  Private
+// @route GET /api/users/guardians
 const getGuardians = async (req, res) => {
     try {
-        const user = await User.findById(req.user._id).populate('guardians', 'name email phone');
-        if (user) {
-            res.json(user.guardians);
-        } else {
-            res.status(404).json({ message: 'User not found' });
-        }
+        const { data: user } = await supabase.from('users').select('guardians').eq('id', req.user.id).single();
+        if (!user?.guardians?.length) return res.json([]);
+        const { data: gs } = await supabase.from('users').select('id, name, email, phone').in('id', user.guardians);
+        res.json(gs || []);
     } catch (error) {
-        console.error(error);
         res.status(500).json({ message: 'Server error' });
     }
 };
 
-// @desc    Get public profile
-// @route   GET /api/users/:id/public
-// @access  Private
-const getPublicProfile = async (req, res) => {
+// @route POST /api/users/guardians
+const addGuardian = async (req, res) => {
+    const { email } = req.body;
     try {
-        const user = await User.findById(req.params.id)
-            .select('name skills trustScore isOnline location');
+        const { data: guardian } = await supabase.from('users').select('id, name, email, phone').ilike('email', (email || '').trim()).single();
+        if (!guardian) return res.status(404).json({ message: 'User with that email not found' });
+        if (guardian.id === req.user.id) return res.status(400).json({ message: 'Cannot add yourself as a guardian' });
 
-        if (user) {
-            res.json(user);
-        } else {
-            res.status(404).json({ message: 'User not found' });
+        const { data: self } = await supabase.from('users').select('name, guardians').eq('id', req.user.id).single();
+        const guardians = self?.guardians || [];
+        if (guardians.includes(guardian.id)) return res.status(400).json({ message: 'Already a guardian' });
+
+        // Check if a pending request already exists
+        const { data: existing } = await supabase.from('notifications')
+            .select('id')
+            .eq('user_id', guardian.id)
+            .eq('sender_id', req.user.id)
+            .eq('type', 'guardian_request')
+            .eq('status', 'pending')
+            .single();
+
+        if (existing) return res.status(400).json({ message: 'Guardian request already pending' });
+
+        // Create notification
+        const { data: notification, error: notifError } = await supabase.from('notifications').insert({
+            user_id: guardian.id,
+            sender_id: req.user.id,
+            type: 'guardian_request',
+            status: 'pending',
+            data: { sender_name: self.name }
+        }).select().single();
+
+        if (notifError) throw notifError;
+
+        // Emit socket event for real-time update
+        if (global.io) {
+            global.io.to(`user:${guardian.id}`).emit('notification:new', {
+                ...notification,
+                sender: { id: req.user.id, name: self.name, email: req.user.email }
+            });
         }
+
+        res.json({ message: 'Guardian request sent', notification });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ message: 'Server error' });
     }
 };
 
-module.exports = {
-    getProfile,
-    updateProfile,
-    updateSkills,
-    updateLocation,
-    getNearbyUsers,
-    addGuardian,
-    removeGuardian,
-    getGuardians,
-    getPublicProfile,
+// @route DELETE /api/users/guardians/:id
+const removeGuardian = async (req, res) => {
+    try {
+        const { data: self } = await supabase.from('users').select('guardians').eq('id', req.user.id).single();
+        const guardians = (self?.guardians || []).filter(g => g !== req.params.id);
+        await supabase.from('users').update({ guardians }).eq('id', req.user.id);
+        res.json({ message: 'Guardian removed' });
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
 };
+
+// @route GET /api/users/nearby
+const getNearbyUsers = async (req, res) => {
+    try {
+        // Prefer query params (passed by frontend with fresh GPS coords), fall back to profile
+        const lat = parseFloat(req.query.lat) || req.user.lat;
+        const lng = parseFloat(req.query.lng) || req.user.lng;
+        const radiusKm = parseFloat(req.query.radius) || 5;
+
+        if (!lat || !lng) return res.status(400).json({ message: 'Location not set. Share your location first.' });
+
+        const { data: users } = await supabase.from('users')
+            .select('id, name, skills, trust_score, lat, lng, is_online')
+            .eq('is_suspended', false)
+            .neq('id', req.user.id);
+
+        const { haversineDistance } = require('../utils/routingEngine');
+        const nearby = (users || [])
+            .filter(u => u.lat && u.lng && haversineDistance(lat, lng, u.lat, u.lng) <= radiusKm)
+            .map(u => ({
+                ...u,
+                distance: haversineDistance(lat, lng, u.lat, u.lng),
+                isOnline: u.is_online,
+                trustScore: u.trust_score || 3,
+            }))
+            .sort((a, b) => a.distance - b.distance);
+
+        res.json(nearby);
+    } catch (error) {
+        res.status(500).json({ message: 'Server error' });
+    }
+};
+
+module.exports = { getProfile, updateProfile, updateSkills, updateLocation, getGuardians, addGuardian, removeGuardian, getNearbyUsers };

@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const auth = require('../middleware/auth');
+const { protect } = require('../middleware/authMiddleware');
 const {
     getProfile,
     updateProfile,
@@ -10,30 +10,15 @@ const {
     addGuardian,
     removeGuardian,
     getGuardians,
-    getPublicProfile,
 } = require('../controllers/userController');
 
-// All user routes are protected
-router.use(auth);
+router.use(protect);
 
-// Profile routes
-router.route('/profile')
-    .get(getProfile)
-    .put(updateProfile);
-
-// Core app features
+router.route('/profile').get(getProfile).put(updateProfile);
 router.put('/skills', updateSkills);
 router.put('/location', updateLocation);
 router.get('/nearby', getNearbyUsers);
-
-// Guardians routes
-router.route('/guardians')
-    .post(addGuardian)
-    .get(getGuardians);
-
-router.delete('/guardians/:guardianId', removeGuardian);
-
-// Public profile fetching (for responders seeing a user's basic info)
-router.get('/:id/public', getPublicProfile);
+router.route('/guardians').post(addGuardian).get(getGuardians);
+router.delete('/guardians/:id', removeGuardian);
 
 module.exports = router;

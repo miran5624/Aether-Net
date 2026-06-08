@@ -1,145 +1,91 @@
-const User = require('../models/User');
+const supabase = require('../config/supabase');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 
-// Generate Access Token
-const generateAccessToken = (id) => {
-    return jwt.sign({ id }, process.env.ACCESS_TOKEN_SECRET, {
-        expiresIn: '24hr',
-    });
-};
+const generateAccessToken = (id) => jwt.sign({ id }, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '1h' });
+const generateRefreshToken = (id) => jwt.sign({ id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: '7d' });
 
-// Generate Refresh Token
-const generateRefreshToken = (id) => {
-    return jwt.sign({ id }, process.env.REFRESH_TOKEN_SECRET, {
-        expiresIn: '7d',
-    });
-};
-
-// @desc    Register new user
-// @route   POST /api/auth/register
-// @access  Public
+// @route POST /api/auth/register
 const register = async (req, res) => {
     try {
-        const { name, email, password, phone } = req.body;
+        const { name, email, password, phone, age, bloodGroup, healthConditions, skills, isPhysicallyDisabled } = req.body;
+        if (!name || !email || !password) return res.status(400).json({ message: 'Please add all required fields' });
 
-        if (!name || !email || !password) {
-            return res.status(400).json({ message: 'Please add all required fields' });
-        }
+        const { data: existing } = await supabase.from('users').select('id').eq('email', email).single();
+        if (existing) return res.status(400).json({ message: 'User already exists' });
 
-        // Check if user exists
-        const userExists = await User.findOne({ email });
-
-        if (userExists) {
-            return res.status(400).json({ message: 'User already exists' });
-        }
-
-        // Hash password
         const salt = await bcrypt.genSalt(12);
         const hashedPassword = await bcrypt.hash(password, salt);
 
-        // Create user
-        const user = await User.create({
-            name,
-            email,
+        const { data: user, error } = await supabase.from('users').insert({
+            name, email,
             password: hashedPassword,
-            phone,
+            phone: phone || null,
+            age: age ? parseInt(age) : null,
+            blood_group: bloodGroup || '',
+            health_conditions: healthConditions || '',
+            skills: Array.isArray(skills) ? skills : [],
+            is_physically_disabled: isPhysicallyDisabled || false,
+        }).select().single();
+
+        if (error) throw error;
+
+        const accessToken = generateAccessToken(user.id);
+        const refreshToken = generateRefreshToken(user.id);
+
+        res.cookie('jwt', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
         });
 
-        if (user) {
-            const accessToken = generateAccessToken(user._id);
-            const refreshToken = generateRefreshToken(user._id);
-
-            // Set cookie
-            res.cookie('jwt', refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV !== 'development', // Use secure cookies in production
-                sameSite: 'strict', // Prevent CSRF attacks
-                maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-            });
-
-            res.status(201).json({
-                _id: user.id,
-                name: user.name,
-                email: user.email,
-                phone: user.phone,
-                token: accessToken,
-            });
-        } else {
-            res.status(400).json({ message: 'Invalid user data' });
-        }
+        res.status(201).json({ _id: user.id, name: user.name, email: user.email, phone: user.phone, token: accessToken });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: 'Server Error' });
+        res.status(500).json({ message: 'Server Error', error: error.message });
     }
 };
 
-// @desc    Authenticate a user
-// @route   POST /api/auth/login
-// @access  Public
+// @route POST /api/auth/login
 const login = async (req, res) => {
     try {
         const { email, password } = req.body;
+        if (!email || !password) return res.status(400).json({ message: 'Please add all required fields' });
 
-        if (!email || !password) {
-            return res.status(400).json({ message: 'Please add all required fields' });
-        }
+        const { data: user } = await supabase.from('users').select('*').eq('email', email).single();
+        if (!user) return res.status(401).json({ message: 'Invalid credentials' });
+        if (user.is_suspended) return res.status(403).json({ message: 'Account suspended due to repeated false alerts' });
 
-        // Check for user email
-        const user = await User.findOne({ email });
+        const match = await bcrypt.compare(password, user.password);
+        if (!match) return res.status(401).json({ message: 'Invalid credentials' });
 
-        if (user && (await bcrypt.compare(password, user.password))) {
-            if (user.isSuspended) {
-                return res.status(403).json({ message: 'Account suspended due to repeated false alerts' });
-            }
+        await supabase.from('users').update({ is_online: true, last_seen: new Date().toISOString() }).eq('id', user.id);
 
-            user.isOnline = true;
-            user.lastSeen = Date.now();
-            await user.save();
+        const accessToken = generateAccessToken(user.id);
+        const refreshToken = generateRefreshToken(user.id);
 
-            const accessToken = generateAccessToken(user._id);
-            const refreshToken = generateRefreshToken(user._id);
+        res.cookie('jwt', refreshToken, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: 'lax',
+            maxAge: 7 * 24 * 60 * 60 * 1000,
+        });
 
-            // Set cookie
-            res.cookie('jwt', refreshToken, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV !== 'development',
-                sameSite: 'strict',
-                maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-            });
-
-            res.json({
-                _id: user.id,
-                name: user.name,
-                email: user.email,
-                phone: user.phone,
-                token: accessToken,
-            });
-        } else {
-            res.status(401).json({ message: 'Invalid credentials' });
-        }
+        res.json({ _id: user.id, name: user.name, email: user.email, phone: user.phone, location: { lat: user.lat, lng: user.lng }, token: accessToken });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server Error' });
     }
 };
 
-// @desc    Logout User / clear cookie
-// @route   POST /api/auth/logout
-// @access  Private
+// @route POST /api/auth/logout
 const logout = async (req, res) => {
     try {
         if (req.user) {
-            const user = await User.findById(req.user._id);
-            if (user) {
-                user.isOnline = false;
-                await user.save();
-            }
+            await supabase.from('users').update({ is_online: false }).eq('id', req.user.id);
         }
-        res.cookie('jwt', '', {
-            httpOnly: true,
-            expires: new Date(0),
-        });
+        res.cookie('jwt', '', { httpOnly: true, expires: new Date(0) });
         res.status(200).json({ message: 'Logged out successfully' });
     } catch (error) {
         console.error(error);
@@ -147,43 +93,50 @@ const logout = async (req, res) => {
     }
 };
 
-// @desc    Refresh access token
-// @route   POST /api/auth/refresh
-// @access  Public
+// @route POST /api/auth/refresh
 const refresh = (req, res) => {
     const refreshToken = req.cookies.jwt;
-
-    if (!refreshToken) {
-        return res.status(401).json({ message: 'Not authorized, no token' });
-    }
-
+    if (!refreshToken) return res.status(401).json({ message: 'Not authorized, no token' });
     try {
         const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
         const accessToken = generateAccessToken(decoded.id);
-
         res.json({ token: accessToken });
     } catch (error) {
-        console.error(error);
         res.status(401).json({ message: 'Not authorized, invalid token' });
     }
 };
 
-// @desc    Get user data
-// @route   GET /api/auth/me
-// @access  Private
+// @route GET /api/auth/me
 const getMe = async (req, res) => {
     try {
         res.status(200).json(req.user);
+    } catch (error) {
+        res.status(500).json({ message: 'Server Error' });
+    }
+};
+
+// @route POST /api/auth/change-password
+const changePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword } = req.body;
+        if (!currentPassword || !newPassword) return res.status(400).json({ message: 'Please provide current and new passwords' });
+        if (newPassword.length < 6) return res.status(400).json({ message: 'New password must be at least 6 characters' });
+
+        const { data: user } = await supabase.from('users').select('*').eq('id', req.user.id).single();
+        if (!user) return res.status(404).json({ message: 'User not found' });
+
+        const isMatch = await bcrypt.compare(currentPassword, user.password);
+        if (!isMatch) return res.status(400).json({ message: 'Current password is incorrect' });
+
+        const salt = await bcrypt.genSalt(12);
+        const hashed = await bcrypt.hash(newPassword, salt);
+        await supabase.from('users').update({ password: hashed }).eq('id', user.id);
+
+        res.json({ message: 'Password changed successfully' });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server Error' });
     }
 };
 
-module.exports = {
-    register,
-    login,
-    logout,
-    refresh,
-    getMe,
-};
+module.exports = { register, login, logout, refresh, getMe, changePassword };
