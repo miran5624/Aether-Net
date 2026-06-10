@@ -7,6 +7,7 @@ export interface SosPacket {
   hopCount: number;
   timestamp: number;
   type: string;
+  description?: string;
 }
 
 const STORAGE_KEY = 'sos_packets';

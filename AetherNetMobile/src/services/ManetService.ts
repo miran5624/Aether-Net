@@ -14,7 +14,7 @@ export const ManetService = {
     // Start Discovery & Advertising simultaneously
     NearbyModule.startAdvertising("NearHelp_Device_" + Math.floor(Math.random() * 1000))
       .catch((e: any) => console.error("Advertising error:", e));
-      
+
     NearbyModule.startDiscovery()
       .catch((e: any) => console.error("Discovery error:", e));
 
@@ -63,22 +63,36 @@ export const ManetService = {
       }
     });
 
+    // ============================================================
+    // MANET Mesh Networking: Device-to-Device Linking
+    // ============================================================
+    // This section handles the core MANET (Mobile Ad-hoc Network) functionality:
+    // - Device Discovery: `onEndpointFound` detects nearby devices
+    // - Device Linking: `onConnected` establishes a peer-to-peer link
+    // - Mesh Maintenance: `onDisconnected` removes broken links
+    // - Packet Broadcasting: `broadcastAllPackets` relays data to all linked peers
+    //
+    // The mesh works by maintaining a list of connected endpoints (peers).
+    // When a device connects, it's added to `connectedEndpoints`, enabling
+    // direct device-to-device communication without central infrastructure.
+    // ============================================================
+
     nearbyEmitter.addListener('onEndpointFound', (event) => {
-       console.log("[ManetService] Endpoint found:", event.endpointId);
+      console.log("[ManetService] Endpoint found:", event.endpointId);
     });
 
     nearbyEmitter.addListener('onConnected', (event) => {
-       console.log("[ManetService] Endpoint connected:", event.endpointId);
-       if (!connectedEndpoints.includes(event.endpointId)) {
-           connectedEndpoints = [...connectedEndpoints, event.endpointId];
-           if (onPeersChanged) onPeersChanged(connectedEndpoints);
-       }
+      console.log("[ManetService] Endpoint connected:", event.endpointId);
+      if (!connectedEndpoints.includes(event.endpointId)) {
+        connectedEndpoints = [...connectedEndpoints, event.endpointId];
+        if (onPeersChanged) onPeersChanged(connectedEndpoints);
+      }
     });
 
     nearbyEmitter.addListener('onDisconnected', (event) => {
-       console.log("[ManetService] Endpoint disconnected:", event.endpointId);
-       connectedEndpoints = connectedEndpoints.filter(id => id !== event.endpointId);
-       if (onPeersChanged) onPeersChanged(connectedEndpoints);
+      console.log("[ManetService] Endpoint disconnected:", event.endpointId);
+      connectedEndpoints = connectedEndpoints.filter(id => id !== event.endpointId);
+      if (onPeersChanged) onPeersChanged(connectedEndpoints);
     });
   },
 
@@ -87,14 +101,14 @@ export const ManetService = {
       const packets = await getAllPackets();
       const validPackets = packets.filter(p => p.hopCount <= 200);
       console.log(`[ManetService] Broadcasting ${validPackets.length} packets to ${connectedEndpoints.length} endpoints`);
-      
+
       for (const packet of validPackets) {
         const outboundPacket = { ...packet, hopCount: packet.hopCount + 1 };
         const messageString = JSON.stringify(outboundPacket);
-        
+
         for (const endpoint of connectedEndpoints) {
-            NearbyModule.sendPayload(endpoint, messageString)
-              .catch((e: any) => console.error(`[ManetService] Failed to send to ${endpoint}`, e));
+          NearbyModule.sendPayload(endpoint, messageString)
+            .catch((e: any) => console.error(`[ManetService] Failed to send to ${endpoint}`, e));
         }
       }
     } catch (e) {

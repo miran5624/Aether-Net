@@ -2,6 +2,11 @@ package com.nearhelpmobile
 
 import android.os.Build
 import android.util.Log
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import com.facebook.react.bridge.*
 import com.facebook.react.modules.core.DeviceEventManagerModule
 import com.google.android.gms.nearby.Nearby
@@ -23,6 +28,43 @@ class NearbyModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
                 .emit(eventName, params)
         } catch (e: Exception) {
             Log.e("NearbyModule", "Failed to send event $eventName", e)
+        }
+    }
+
+    private fun emitEvent(eventName: String, data: String) {
+        try {
+            reactApplicationContext
+                .getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter::class.java)
+                .emit(eventName, data)
+        } catch (e: Exception) {
+            Log.e("NearbyModule", "Failed to emit string event $eventName", e)
+        }
+    }
+
+    private val sensorManager = reactContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
+    private var rotationVectorSensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+    private val rotationMatrix = FloatArray(9)
+    private val orientationAngles = FloatArray(3)
+
+    private val compassListener = object : SensorEventListener {
+        override fun onSensorChanged(event: SensorEvent) {
+            if (event.sensor.type == Sensor.TYPE_ROTATION_VECTOR) {
+                val rotationMatrix = FloatArray(9)
+                val orientationAngles = FloatArray(3)
+
+                SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
+                SensorManager.getOrientation(rotationMatrix, orientationAngles)
+
+                // azimuth in radians (-π to +π)
+                var azimuthDeg = Math.toDegrees(orientationAngles[0].toDouble())
+                // Normalize to 0-360
+                azimuthDeg = (azimuthDeg + 360.0) % 360.0
+
+                emitEvent("onCompassUpdate", azimuthDeg.toInt().toString())
+            }
+        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+            emitEvent("onCompassAccuracy", accuracy.toString())
         }
     }
 
@@ -200,5 +242,19 @@ class NearbyModule(reactContext: ReactApplicationContext) : ReactContextBaseJava
             Log.e("NearbyModule", "Exception in stopAll", e)
             promise.reject("STOP_ERROR", e.message, e)
         }
+    }
+
+    @ReactMethod
+    fun startCompass() {
+        val sensor = rotationVectorSensor ?: run {
+            emitEvent("onCompassUpdate", "-1")
+            return
+        }
+        sensorManager.registerListener(compassListener, sensor, SensorManager.SENSOR_DELAY_UI)
+    }
+
+    @ReactMethod
+    fun stopCompass() {
+        sensorManager.unregisterListener(compassListener)
     }
 }

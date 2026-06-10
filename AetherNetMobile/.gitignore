@@ -43,11 +43,6 @@ yarn-error.log
 
 # fastlane
 #
-# It is recommended to not store the screenshots in the git repo. Instead, use fastlane to re-generate the
-# screenshots whenever they are needed.
-# For more information about the recommended setup visit:
-# https://docs.fastlane.tools/best-practices/source-control/
-
 **/fastlane/report.xml
 **/fastlane/Preview.html
 **/fastlane/screenshots
@@ -73,3 +68,23 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# =========================================
+# ADDED BY AI (Standard RN/TS Additions)
+# =========================================
+
+# Environment Variables
+.env
+.env.local
+.env*.local
+!.env.example
+
+# TypeScript Build Info
+*.tsbuildinfo
+
+# ESLint Cache
+.eslintcache
+
+# Visual Studio Code / JetBrains workspace settings
+.vscode/*
+!.vscode/extensions.json

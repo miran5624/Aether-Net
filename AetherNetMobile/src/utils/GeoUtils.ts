@@ -41,3 +41,23 @@ export function getDistanceKm(
     return 0;
   }
 }
+
+export function getBearing(
+  lat1: number, lng1: number,
+  lat2: number, lng2: number
+): number {
+  const lat1Rad = lat1 * Math.PI / 180;
+  const lat2Rad = lat2 * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const x = Math.sin(dLng) * Math.cos(lat2Rad);
+  const y = Math.cos(lat1Rad) * Math.sin(lat2Rad) -
+            Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(dLng);
+  const bearing = (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
+  return Math.round(bearing);
+}
+
+export function bearingToCardinal(bearing: number): string {
+  const directions = ['N','NNE','NE','ENE','E','ESE','SE','SSE',
+                      'S','SSW','SW','WSW','W','WNW','NW','NNW'];
+  return directions[Math.round(bearing / 22.5) % 16];
+}
