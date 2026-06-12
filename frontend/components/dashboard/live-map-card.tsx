@@ -37,13 +37,12 @@ const typeConfig: any = {
 };
 
 const LEGEND = [
-  { color: "#FF3B30", label: "Medical / Fire" },
-  { color: "#FF9F0A", label: "Car / Gas" },
-  { color: "#8A2BE2", label: "Threat" },
-  { color: "#34C759", label: "General" },
+  { color: "#FF3B30", label: "Medical / Fire Issues" },
+  { color: "#FF9F0A", label: "Car / Gas Issues" },
+  { color: "#8A2BE2", label: "Threat Issue" },
+  { color: "#34C759", label: "General Issues" },
   { color: "#3B82F6", label: "Hospital", isPOI: true },
-  { color: "#6366F1", label: "Police", isPOI: true },
-  { color: "#EF4444", label: "Extinguisher", isPOI: true }
+  { color: "#6366F1", label: "Police", isPOI: true }
 ];
 
 // SVG strings for markers (since L.divIcon needs raw HTML string)
@@ -86,40 +85,19 @@ export default function LiveMapCard() {
   const [poiCenter, setPoiCenter] = useState<{ lat: number, lng: number } | null>(null);
   const [pois, setPois] = useState<any>({ hospitals: [], fireStations: [], policeStations: [], extinguishers: [] });
 
-  const generateMockPOIs = (lat: number, lng: number) => {
-    const randomOffset = () => (Math.random() - 0.5) * 0.02; // Roughly 1-2km radius
-
-    return {
-      hospitals: Array.from({ length: 2 }, (_, i) => ({
-        id: `h-${i}`,
-        name: `City Hospital ${i + 1}`,
-        lat: lat + randomOffset(),
-        lng: lng + randomOffset()
-      })),
-      policeStations: Array.from({ length: 2 }, (_, i) => ({
-        id: `p-${i}`,
-        name: `Police Station ${i + 1}`,
-        lat: lat + randomOffset(),
-        lng: lng + randomOffset()
-      })),
-      fireStations: Array.from({ length: 1 }, (_, i) => ({
-        id: `f-${i}`,
-        name: `Fire Station ${i + 1}`,
-        lat: lat + randomOffset(),
-        lng: lng + randomOffset()
-      })),
-      extinguishers: Array.from({ length: 3 }, (_, i) => ({
-        id: `e-${i}`,
-        name: `Safety Extinguisher ${i + 1}`,
-        lat: lat + randomOffset(),
-        lng: lng + randomOffset()
-      }))
-    };
+  const fetchPOIs = async (lat: number, lng: number) => {
+    try {
+      const { data } = await api.get(`/map/resources?lat=${lat}&lng=${lng}`);
+      setPois(data);
+      setPoiCenter({ lat, lng });
+    } catch (err) {
+      console.error("Failed to fetch POIs", err);
+    }
   };
 
-  // Fetch POIs once on mount
+  // Fetch POIs initially for default center
   useEffect(() => {
-    api.get('/map/points-of-interest').then(({ data }) => setPois(data)).catch(() => { });
+    fetchPOIs(mapCenter[0], mapCenter[1]);
   }, []);
 
   const recenterMap = () => {
@@ -180,8 +158,7 @@ export default function LiveMapCard() {
         };
 
         if (getDistance({ lat, lng }, poiCenter) > 2) {
-          setPois(generateMockPOIs(lat, lng));
-          setPoiCenter({ lat, lng });
+          fetchPOIs(lat, lng);
         }
 
         if (user) {
@@ -353,15 +330,7 @@ export default function LiveMapCard() {
             const icon = createCustomIcon('#6366F1', ICON_SVG.police);
             return icon ? (
               <Marker key={`p-${i}`} position={[p.lat, p.lng]} icon={icon}>
-                <Popup><span className="font-bold text-indigo-600">Police:</span> {p.name}</Popup>
-              </Marker>
-            ) : null;
-          })}
-          {pois.extinguishers?.map((e: any, i: number) => {
-            const icon = createCustomIcon('#EF4444', ICON_SVG.extinguisher);
-            return icon ? (
-              <Marker key={`e-${i}`} position={[e.lat, e.lng]} icon={icon}>
-                <Popup><span className="font-bold text-red-500">Fire Extinguisher:</span> {e.name}</Popup>
+                <Popup><span className="font-bold text-indigo-500">Police:</span> {p.name}</Popup>
               </Marker>
             ) : null;
           })}

@@ -55,8 +55,14 @@ export default function DashboardPage() {
     });
   }, []);
 
-  // On mount: check if seeker already has an active SOS in progress
+  // On mount: check if seeker already has an active SOS in progress, and ask for Notification permission
   useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission !== "granted" && Notification.permission !== "denied") {
+        Notification.requestPermission();
+      }
+    }
+    
     if (!user || !socket) return;
     const sync = async () => {
       try {
@@ -78,15 +84,25 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!socket) return;
 
+    // Helper to send native browser notification
+    const sendNativeNotification = (title: string, body: string) => {
+      if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+        new Notification(title, { body });
+      }
+    };
+
     // Notify nearby users of new SOS → add to presence queue
     const onNewAlert = (data: any) => {
       setNotificationQueue(prev => [...prev, { ...data, isPriority: false }]);
+      sendNativeNotification("New Community Alert", `A ${data.sos?.type || 'emergency'} was reported nearby.`);
     };
     const onPriorityAlert = (data: any) => {
       setNotificationQueue(prev => [...prev, { ...data, isPriority: true }]);
+      sendNativeNotification("Priority SOS Alert", `Urgent: A ${data.sos?.type || 'emergency'} requires your skills nearby.`);
     };
     const onGuardianAlert = (data: any) => {
       setNotificationQueue(prev => [...prev, { ...data, isGuardian: true, isPriority: true }]);
+      sendNativeNotification("Guardian Alert!", `${data.seekerName || 'Someone'} you guard has raised a ${data.sos?.type || 'emergency'} SOS!`);
     };
 
     // Fires on BOTH seeker and responder when presence confirmed — opens MutualResponseView
