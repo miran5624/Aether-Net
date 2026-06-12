@@ -1,38 +1,222 @@
 // ============================================================
-// NearHelp AI Service — keyword engine powered (zero API calls)
-// All functions retain async signatures so no callers need changes
+// AetherNet AI Service — Gemini AI Powered
+// Fixed: removed non-existent gemini-3.5-flash model,
+//        429 (quota) is per-model — falls through to next model,
+//        only 401/403 (bad API key) short-circuit globally,
+//        improved logging and fallback chain.
 // ============================================================
 
-const { getGuidanceBySOSType } = require('./keywordEngine');
+const { GoogleGenAI } = require('@google/genai');
+const { getEmergencyLocation } = require('../utils/geocoding');
 
-// ─── 1. FIRST-RESPONSE GUIDANCE ──────────────────────────────
-const generateFirstResponseGuidance = async (sosType, modalData, userProfile) => {
-    const response = getGuidanceBySOSType(sosType);
-    let guidance = response.guidance;
+// Initialize the SDK using process.env.GEMINI_API_KEY automatically
+const ai = new GoogleGenAI({});
 
-    // Append blood group note if medical and we have it
-    if (sosType === 'Medical' && userProfile?.blood_group) {
-        guidance += `\n8. Blood group on record: ${userProfile.blood_group} — inform medical responder immediately`;
+// ─── MARKDOWN STRIPPER ────────────────────────────────────────
+/**
+ * Remove markdown formatting from AI-generated text
+ * Strips: **bold**, *italic*, __underline__, `code`, etc.
+ * Preserves the actual text content
+ */
+function stripMarkdown(text) {
+    if (!text) return text;
+    
+    return text
+        // Remove bold: **text** or __text__
+        .replace(/\*\*(.+?)\*\*/g, '$1')
+        .replace(/__(.+?)__/g, '$1')
+        // Remove italic: *text* or _text_
+        .replace(/\*(.+?)\*/g, '$1')
+        .replace(/_(.+?)_/g, '$1')
+        // Remove inline code: `text`
+        .replace(/`(.+?)`/g, '$1')
+        // Remove headers: ## text or ### text
+        .replace(/^#{1,6}\s+/gm, '')
+        // Remove bullet points: - text or * text
+        .replace(/^[-*]\s+/gm, '')
+        // Remove numbered lists: 1. text
+        .replace(/^\d+\.\s+/gm, '')
+        // Clean up any remaining asterisks or underscores
+        .replace(/\*+/g, '')
+        .replace(/_+/g, '')
+        // Clean up extra whitespace
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+// ─── GEMINI API CORE HELPER ──────────────────────────────────
+async function callGemini(prompt) {
+    // Valid model chain — gemini-3.5-flash does NOT exist, removed to avoid
+    // wasting a round-trip 503 on every single call.
+    const models = [
+        'gemini-2.5-flash',   // Primary — fastest, most capable
+        'gemini-2.0-flash',   // Fallback — stable
+        'gemini-1.5-flash',   // Last resort — always available
+    ];
+
+    for (const modelName of models) {
+        try {
+            const response = await ai.models.generateContent({
+                model: modelName,
+                contents: prompt,
+                config: {
+                    temperature: 0.3,
+                    maxOutputTokens: 1024, // Increased from 512 to prevent truncation
+                },
+            });
+
+            const text = response.text;
+            if (text && text.trim().length > 0) {
+                // Strip markdown formatting from AI response
+                const cleanText = stripMarkdown(text.trim());
+                console.log(`[aiService] ✅ Gemini response generated using model: ${modelName}`);
+                return cleanText;
+            }
+
+            // Empty response — try next model
+            console.warn(`[aiService] ⚠️ ${modelName} returned empty response, trying next...`);
+
+        } catch (err) {
+            const rawMessage = err.message || JSON.stringify(err);
+
+            // Attempt to parse the nested JSON error Gemini SDK wraps errors in
+            let code = null;
+            try {
+                const parsed = JSON.parse(rawMessage);
+                code = parsed?.error?.code;
+            } catch {
+                // Not JSON — leave code as null
+            }
+
+            // ── Truly global errors: same API key is used for all models,
+            //    so these will fail identically on every model. Short-circuit immediately.
+            if (code === 400) {
+                console.error(`[aiService] ❌ Bad request (400) — check prompt format: ${rawMessage}`);
+                throw new Error(`Gemini bad request: ${rawMessage}`);
+            }
+            if (code === 401 || code === 403) {
+                console.error(`[aiService] ❌ Auth/permission error (${code}) — check GEMINI_API_KEY: ${rawMessage}`);
+                throw new Error(`Gemini auth error ${code}: ${rawMessage}`);
+            }
+
+            // ── Per-model errors: 429 quota and 503 overload are scoped to a specific
+            //    model. Each model has its own separate free-tier quota bucket, so
+            //    falling through to the next model is exactly the right move.
+            if (code === 429) {
+                console.warn(`[aiService] ⚠️ ${modelName} quota exhausted (429), trying next model...`);
+            } else if (code === 503) {
+                console.warn(`[aiService] ⚠️ ${modelName} overloaded (503), trying next model...`);
+            } else {
+                console.warn(`[aiService] ⚠️ ${modelName} failed (code: ${code ?? 'unknown'}), trying next model. Reason: ${rawMessage}`);
+            }
+        }
     }
 
-    return guidance;
+    // All models exhausted
+    throw new Error('All Gemini models failed. Unable to generate AI response. Please contact emergency services immediately at 112.');
+}
+
+// ─── 1. DYNAMIC FIRST-RESPONSE GUIDANCE ──────────────────────
+const generateFirstResponseGuidance = async (sosType, modalData, userProfile) => {
+    const description = modalData?.description || '';
+    const bloodGroup = userProfile?.blood_group || '';
+    const healthConditions = userProfile?.health_conditions || '';
+
+    const prompt = `You are an expert emergency assistant operating in India.
+The system context is classified as a "${sosType}" alert.
+
+User-Provided Crisis Context:
+- Description of the situation: "${description}"
+- Medical history/conditions: ${healthConditions || 'None registered'}
+- Blood group: ${bloodGroup || 'Not specified'}
+
+Task:
+Analyze the specific situation details. If the description mentions a low-severity issue (like a simple headache), provide calm relief tips. If the description indicates a high-severity crisis (like a heart attack, deep wound, or cardiac distress), immediately list life-saving emergency actions. Provide relevant emergency dispatch numbers (like 108 for medical or 112) depending on what the severity demands.`;
+
+    try {
+        return await callGemini(prompt);
+    } catch (err) {
+        console.error('[aiService] ❌ CRITICAL: Unable to generate first-response guidance:', err.message);
+        throw new Error(`AI service unavailable: ${err.message}. Please contact emergency services immediately at 112.`);
+    }
 };
 
-// ─── 2. EMERGENCY CALL SCRIPT ────────────────────────────────
-const generateCallScript = async (sosType, modalData, userProfile, locationHint = '') => {
-    const name = userProfile?.name || 'a NearHelp user';
-    const location = locationHint || '[DESCRIBE YOUR LOCATION]';
+// ─── 2. DYNAMIC EMERGENCY CALL SCRIPT ────────────────────────
+const generateCallScript = async (sosType, modalData, userProfile, locationHint = '', lat = null, lng = null) => {
+    const name = userProfile?.name || 'an individual';
+    const description = modalData?.description || '';
+    const bloodGroup = userProfile?.blood_group || '';
+    const healthConditions = userProfile?.health_conditions || '';
 
-    const scriptMap = {
-        'Medical': `I am reporting a medical emergency. My name is ${name}. The person is at ${location}. They are ${modalData?.description || 'injured and needs immediate help'}. ${userProfile?.blood_group ? 'Blood group: ' + userProfile.blood_group + '.' : ''} Please send an ambulance immediately.`,
-        'Fire': `I am reporting a fire emergency. My name is ${name}. The fire is at ${location}. People may be inside. Please send the fire brigade immediately.`,
-        'Gas Leak': `I am reporting a gas leak. My name is ${name}. The location is ${location}. We have evacuated the building. Please send emergency services immediately.`,
-        'Car Problem': `I am stranded due to a vehicle breakdown. My name is ${name}. I am at ${location}. ${modalData?.make ? 'Vehicle: ' + modalData.make + ' ' + (modalData.model || '') + '.' : ''} I need roadside assistance.`,
-        'Flood / Water': `I am reporting a flooding emergency. My name is ${name}. I am trapped at ${location}. Water levels are rising. Please send rescue services immediately.`,
-        'Threat to Safety': `I need police assistance immediately. My name is ${name}. I am at ${location}. I am in danger. Please send officers now.`,
-    };
+    // Get human-readable address from GPS coordinates
+    let locationInfo = locationHint || 'Current location';
+    
+    if (lat && lng) {
+        try {
+            console.log(`[aiService] 🗺️ Reverse geocoding: ${lat}, ${lng}`);
+            const address = await getEmergencyLocation(lat, lng, locationHint);
+            locationInfo = address;
+            console.log(`[aiService] ✅ Location resolved: ${address}`);
+        } catch (error) {
+            console.error('[aiService] ⚠️ Geocoding failed, using coordinates:', error.message);
+            locationInfo = locationHint 
+                ? `${locationHint} (GPS: ${lat.toFixed(6)}, ${lng.toFixed(6)})`
+                : `GPS: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        }
+    }
 
-    return scriptMap[sosType] || `I am calling to report a ${sosType} emergency. My name is ${name}. I am at ${location}. Please send help immediately.`;
+    let contextDetails = '';
+    
+    // Add type-specific context
+    if (sosType === 'Medical') {
+        contextDetails = `Blood Group: ${bloodGroup || 'Unknown'}\nHealth Conditions: ${healthConditions || 'None reported'}\nLocation: ${locationInfo}`;
+    } else if (sosType === 'Car Problem') {
+        const make = modalData?.make || '';
+        const model = modalData?.model || '';
+        const plate = modalData?.plate || '';
+        contextDetails = `Vehicle: ${make} ${model}\nPlate Number: ${plate}\nLocation: ${locationInfo}`;
+    } else if (sosType === 'Fire' || sosType === 'Gas Leak') {
+        contextDetails = `Location: ${locationInfo}`;
+    } else {
+        contextDetails = `Location: ${locationInfo}`;
+    }
+
+    const prompt = `You are helping prepare an emergency call script for calling 112 in India.
+
+CALLER DETAILS:
+Name: ${name}
+Emergency Type: ${sosType}
+Situation: ${description || 'Emergency situation'}
+
+CONTEXT:
+${contextDetails}
+
+TASK: Write the EXACT words the caller should speak to the 112 emergency dispatcher. Requirements:
+
+1. Write in FIRST PERSON (as if you ARE the caller speaking)
+2. Start with: "Hello, this is ${name}."
+3. Clearly state the emergency type
+4. Describe the specific situation
+5. State the COMPLETE location address (CRITICAL - say the full address exactly as provided above)
+6. Mention medical details if relevant (blood group, conditions)
+7. Request immediate assistance
+8. Mention that a NearHelp community alert has been triggered
+9. End with urgency if life-threatening
+
+DO NOT include:
+- Any preamble like "Here's a script..." or "This is what to say..."
+- Stage directions like "*pauses*" or "[location]"
+- Your own commentary
+- Incomplete sentences
+
+Write a complete, professional emergency call script (4-6 sentences). Start now with "Hello, this is ${name}..."`;
+
+    try {
+        return await callGemini(prompt);
+    } catch (err) {
+        console.error('[aiService] ❌ Unable to generate call script:', err.message);
+        throw new Error(`AI service unavailable: ${err.message}`);
+    }
 };
 
 // ─── 3. POST-RESOLUTION DEBRIEF ──────────────────────────────
@@ -41,20 +225,36 @@ const generateDebriefPrompt = async (sos) => {
         ? Math.round((new Date(sos.resolved_at) - new Date(sos.created_at)) / 60000)
         : null;
 
-    return `You handled something really difficult today${durationMin ? ` (${durationMin} minutes)` : ''}. Take a moment to rest and drink some water. Let someone close to you know you are safe. You do not have to process everything at once — it is okay to take your time.`;
+    const prompt = `Act as a supportive coordinator. An emergency situation of type "${sos.type}" with the details "${sos.modal_data?.description || 'medical distress'}" has just been successfully resolved after lasting ${durationMin || 'a few'} minutes.
+
+Generate a short, thoughtful decompression message checking in on their well-being based on what they just went through.`;
+
+    try {
+        return await callGemini(prompt);
+    } catch (err) {
+        console.error('[aiService] ❌ Unable to generate debrief:', err.message);
+        throw new Error(`AI service unavailable: ${err.message}`);
+    }
 };
 
 // ─── 4. INCIDENT SUMMARY ─────────────────────────────────────
 const generateResolutionSummary = async (sos) => {
     const duration = sos.response_time_seconds
         ? `${Math.floor(sos.response_time_seconds / 60)}m ${sos.response_time_seconds % 60}s`
-        : 'Unknown';
+        : 'Variable';
 
-    return `Incident Type: ${sos.type} | ` +
-        `Time: ${new Date(sos.created_at).toLocaleString()} | ` +
-        `Duration: ${duration} | ` +
-        `Responders: ${sos.responders?.length || 0} | ` +
-        `Status: Resolved successfully by community response`;
+    const prompt = `Generate a concise summary log entry for this incident:
+- Incident Type: ${sos.type}
+- Total Active Duration: ${duration}
+- Responders deployed: ${sos.responders?.length || 0}
+- Log description: "${sos.modal_data?.description || 'No user input metadata available'}"`;
+
+    try {
+        return await callGemini(prompt);
+    } catch (err) {
+        console.error('[aiService] ❌ Unable to generate resolution summary:', err.message);
+        throw new Error(`AI service unavailable: ${err.message}`);
+    }
 };
 
 module.exports = {

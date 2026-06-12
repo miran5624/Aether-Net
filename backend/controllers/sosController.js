@@ -98,26 +98,96 @@ const createSOS = async (req, res) => {
                 io.to('admin:room').emit('admin:sos_created', sos);
             }, 500);
         }
-        // ... (rest of the code omitted for brevity but stays) ...
-        // Async AI: generate guidance + call script in parallel
-        Promise.all([
-            aiService.generateFirstResponseGuidance(type, modalData, seeker),
-            aiService.generateCallScript(type, modalData, seeker, modalData?.landmark || ''),
-        ]).then(async ([guidance, callScript]) => {
-            await supabase.from('sos').update({
-                first_response_guidance: guidance,
-                call_script: callScript,
-            }).eq('id', sos.id);
 
-            if (io) {
-                io.emit(`sos:ai_ready`, {
-                    sosId: sos.id,
-                    guidance,
-                    callScript,
-                });
-                io.emit('sos:stats_updated');
+        // ... (rest of the code omitted for brevity but stays) ...
+        // Async AI: generate guidance + call script SEQUENTIALLY to save quota
+        (async () => {
+            try {
+                console.log(`[AI] Starting generation for SOS ${sos.id}, type: ${type}`);
+                
+                // Generate guidance first
+                let guidance = null;
+                let callScript = null;
+                
+                try {
+                    guidance = await aiService.generateFirstResponseGuidance(type, modalData, seeker);
+                    console.log(`[AI] ✅ Guidance generated for SOS ${sos.id}`);
+                } catch (err) {
+                    console.error(`[AI] ❌ Guidance generation failed:`, err.message);
+                    guidance = null; // Will use frontend fallback
+                }
+                
+                // Then generate call script (optional - don't let this block the guidance)
+                try {
+                    callScript = await aiService.generateCallScript(
+                        type, 
+                        modalData, 
+                        seeker, 
+                        modalData?.landmark || '', 
+                        finalLat, 
+                        finalLng
+                    );
+                    console.log(`[AI] ✅ Call script generated for SOS ${sos.id}`);
+                } catch (err) {
+                    console.error(`[AI] ⚠️ Call script generation failed (non-critical):`, err.message);
+                    callScript = null; // Will use frontend fallback
+                }
+                
+                // Save both to database (even if one is null)
+                const updateData = {};
+                if (guidance) updateData.first_response_guidance = guidance;
+                if (callScript) updateData.call_script = callScript;
+                
+                if (Object.keys(updateData).length > 0) {
+                    await supabase.from('sos').update(updateData).eq('id', sos.id);
+                    console.log(`[AI] 💾 Saved to database for SOS ${sos.id}`);
+                }
+
+                if (io) {
+                    const payload = {
+                        sosId: sos.id,
+                        guidance,
+                        callScript,
+                    };
+                    
+                    // Log exactly what we're sending
+                    console.log('[AI] 📤 Socket payload:', JSON.stringify({
+                        sosId: sos.id,
+                        hasGuidance: !!guidance,
+                        hasCallScript: !!callScript,
+                        guidanceLength: guidance?.length || 0,
+                        guidancePreview: guidance?.substring(0, 100) || ''
+                    }));
+                    
+                    console.log(`[AI] 📡 About to emit sos:ai_ready - Connected sockets:`, io.sockets.sockets.size);
+                    console.log(`[AI] 📡 Seeker room: user:${seeker.id}`);
+                    
+                    // Emit EVEN IF only guidance succeeded - using BROADCAST to ALL connected clients
+                    io.emit('sos:ai_ready', payload);
+                    console.log(`[AI] ✅ Global emit sent for SOS ${sos.id}`);
+                    
+                    // Also emit to specific user room as backup
+                    if (seeker && seeker.id) {
+                        const roomEmitResult = io.to(`user:${seeker.id}`).emit('sos:ai_ready', payload);
+                        console.log(`[AI] ✅ Room emit sent to user:${seeker.id}`, roomEmitResult ? 'success' : 'might have failed');
+                    }
+                    
+                    // Log all rooms this seeker is in
+                    const seekerSockets = await io.in(`user:${seeker.id}`).fetchSockets();
+                    console.log(`[AI] 🔍 Seeker has ${seekerSockets.length} socket(s) connected in their room`);
+                    seekerSockets.forEach((s, i) => {
+                        console.log(`[AI]   Socket ${i}: ID=${s.id}, rooms=${Array.from(s.rooms).join(', ')}`);
+                    });
+                    
+                    io.emit('sos:stats_updated');
+                } else {
+                    console.error('[AI] ❌ Socket IO not available!');
+                }
+            } catch (err) {
+                console.error('[AI] ❌ Critical error in AI generation:', err);
+                // Don't block SOS creation if AI fails completely
             }
-        }).catch(err => console.error('AI Generation Error:', err));
+        })();
 
         res.status(201).json({ ...sos, _id: sos.id, notifiedUsers: targets.priority.length + targets.general.length });
     } catch (error) {
@@ -334,34 +404,67 @@ const respondToSOS = async (req, res) => {
 // @route POST /api/sos/:id/resolve
 const resolveSOS = async (req, res) => {
     try {
-        const { data: sos } = await supabase.from('sos').select('*').eq('id', req.params.id).single();
-        if (!sos) return res.status(404).json({ message: 'SOS not found' });
-        if (sos.seeker_id !== req.user.id) return res.status(403).json({ message: 'Only the seeker can resolve' });
+        console.log(`[resolveSOS] Attempting to resolve SOS ${req.params.id} by user ${req.user.id}`);
+        
+        const { data: sos, error: fetchError } = await supabase.from('sos').select('*').eq('id', req.params.id).single();
+        if (fetchError) {
+            console.error('[resolveSOS] Error fetching SOS:', fetchError);
+            return res.status(500).json({ message: 'Failed to fetch SOS', error: fetchError.message });
+        }
+        if (!sos) {
+            console.error('[resolveSOS] SOS not found:', req.params.id);
+            return res.status(404).json({ message: 'SOS not found' });
+        }
+        if (sos.seeker_id !== req.user.id) {
+            console.error('[resolveSOS] Permission denied. SOS seeker:', sos.seeker_id, 'User:', req.user.id);
+            return res.status(403).json({ message: 'Only the seeker can resolve' });
+        }
 
         const resolvedAt = new Date().toISOString();
         const responseTimeSeconds = Math.round((new Date(resolvedAt) - new Date(sos.created_at)) / 1000);
 
-        const { data: updated } = await supabase.from('sos').update({
+        console.log(`[resolveSOS] Updating SOS ${req.params.id} to resolved status`);
+        const { data: updated, error: updateError } = await supabase.from('sos').update({
             status: 'resolved',
             resolved_at: resolvedAt,
             response_time_seconds: responseTimeSeconds,
         }).eq('id', req.params.id).select().single();
 
+        if (updateError) {
+            console.error('[resolveSOS] Error updating SOS:', updateError);
+            return res.status(500).json({ message: 'Failed to resolve SOS', error: updateError.message });
+        }
+
+        console.log(`[resolveSOS] ✅ SOS ${req.params.id} successfully resolved`);
+
         const io = req.app.get('io');
 
-        // AI: generate incident summary + debrief in parallel
+        // AI: generate incident summary + debrief SEQUENTIALLY to save quota
         if (sos.seeker_id) {
-            Promise.all([
-                aiService.generateResolutionSummary(updated, updated.chat_log || []),
-                aiService.generateDebriefPrompt(updated, sos.seeker_id),
-            ]).then(async ([summary, debrief]) => {
-                await supabase.from('sos').update({ resolution_summary: summary, debrief_prompt: debrief }).eq('id', sos.id);
-                if (io) {
-                    // Push debrief to seeker only
-                    io.to(`user:${sos.seeker_id}`).emit('sos:debrief_ready', { sosId: sos.id, debrief });
-                    io.to(`chat:${sos.id}`).emit('sos:summary_ready', { sosId: sos.id, summary });
+            (async () => {
+                try {
+                    // Generate summary first
+                    const summary = await aiService.generateResolutionSummary(updated);
+                    
+                    // Then generate debrief
+                    const debrief = await aiService.generateDebriefPrompt(updated);
+                    
+                    // Save both to database
+                    await supabase.from('sos').update({ 
+                        resolution_summary: summary, 
+                        debrief_prompt: debrief 
+                    }).eq('id', sos.id);
+                    
+                    if (io) {
+                        // Push debrief to seeker only
+                        io.to(`user:${sos.seeker_id}`).emit('sos:debrief_ready', { sosId: sos.id, debrief });
+                        io.to(`chat:${sos.id}`).emit('sos:summary_ready', { sosId: sos.id, summary });
+                    }
+                } catch (err) {
+                    console.error('AI Resolution Error:', err);
+                    // Don't block resolution if AI fails
                 }
-            }).catch(err => console.error('AI Resolution Error:', err));
+            })();
         }
 
         scheduleWelfareCheck(sos.seeker_id, sos.id);
@@ -480,18 +583,33 @@ const handleAIChat = async (req, res) => {
 // @route GET /api/sos/me/active
 const getMyActiveSOS = async (req, res) => {
     try {
-        const { data: sos } = await supabase
+        console.log('[getMyActiveSOS] Checking for user:', req.user.id);
+        
+        const { data: sosList, error } = await supabase
             .from('sos')
             .select('*')
             .eq('seeker_id', req.user.id)
             .in('status', ['active', 'responding'])
             .order('created_at', { ascending: false })
-            .limit(1)
-            .single();
+            .limit(1);
 
-        if (sos) sos._id = sos.id;
-        res.json(sos || null);
+        // Handle case where no active SOS exists (don't use .single())
+        if (error) {
+            console.error('[getMyActiveSOS] Error:', error);
+            return res.status(500).json({ message: 'Server error', error: error.message });
+        }
+
+        const sos = sosList && sosList.length > 0 ? sosList[0] : null;
+        if (sos) {
+            sos._id = sos.id;
+            console.log('[getMyActiveSOS] Found active SOS:', sos.id, 'Status:', sos.status, 'Created:', sos.created_at);
+        } else {
+            console.log('[getMyActiveSOS] No active SOS found');
+        }
+        
+        res.json(sos);
     } catch (error) {
+        console.error('[getMyActiveSOS] Unexpected error:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
     }
 };

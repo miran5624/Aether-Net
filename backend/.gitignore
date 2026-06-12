@@ -5,6 +5,7 @@ node_modules/
 .env
 .env.development
 .env.production
+.env.*.local
 
 # Logs
 logs
@@ -22,3 +23,19 @@ yarn-error.log*
 # Mac/Windows system files
 .DS_Store
 Thumbs.db
+
+# ---------------------------------------------------
+# Custom additions based on your directory structure
+# ---------------------------------------------------
+
+# Local Scratch and Manual Test Files
+# (Remove these lines if you actually want to version control your test scripts)
+scratch_test_*.js
+test-*.js
+
+# Local Dev/Admin Scripts
+drop-and-recreate.sql
+
+# Local Data (Uncomment if the 'data' folder holds local DB dumps/temp files)
+# /data/*
+# !/data/seed.json # Example of keeping a specific file while ignoring the rest

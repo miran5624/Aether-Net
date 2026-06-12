@@ -28,15 +28,25 @@ CREATE TABLE IF NOT EXISTS public.users (
 -- Create SOS table
 CREATE TABLE IF NOT EXISTS public.sos (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
-    location_lat DECIMAL(10, 8) NOT NULL,
-    location_lng DECIMAL(11, 8) NOT NULL,
+    seeker_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+    lat DECIMAL(10, 8) NOT NULL,
+    lng DECIMAL(11, 8) NOT NULL,
     address TEXT,
     status VARCHAR(50) DEFAULT 'active',
-    emergency_type VARCHAR(100),
+    type VARCHAR(100),
     description TEXT,
+    modal_data JSONB,
+    first_response_guidance TEXT,
+    call_script TEXT,
     responders UUID[], -- Array of user IDs
     false_alarm BOOLEAN DEFAULT false,
+    is_anonymous BOOLEAN DEFAULT false,
+    anonymous_name VARCHAR(255),
+    anonymous_blood_group VARCHAR(10),
+    chat_log JSONB,
+    resolution_summary TEXT,
+    debrief_prompt TEXT,
+    response_time_seconds INTEGER,
     resolved_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT NOW()
 );
@@ -66,7 +76,7 @@ CREATE TABLE IF NOT EXISTS public.ratings (
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_users_email ON public.users(email);
 CREATE INDEX IF NOT EXISTS idx_users_is_online ON public.users(is_online);
-CREATE INDEX IF NOT EXISTS idx_sos_user_id ON public.sos(user_id);
+CREATE INDEX IF NOT EXISTS idx_sos_seeker_id ON public.sos(seeker_id);
 CREATE INDEX IF NOT EXISTS idx_sos_status ON public.sos(status);
 CREATE INDEX IF NOT EXISTS idx_welfare_checks_user_id ON public.welfare_checks(user_id);
 CREATE INDEX IF NOT EXISTS idx_welfare_checks_guardian_id ON public.welfare_checks(guardian_id);
