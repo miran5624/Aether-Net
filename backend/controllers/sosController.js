@@ -88,10 +88,12 @@ const createSOS = async (req, res) => {
             // 2. Community after short delay
             setTimeout(() => {
                 targets.priority.forEach(userId => {
-                    io.to(`user:${userId}`).emit('sos:priority_alert', { sos, isPriority: true });
+                    if (!targets.guardians.includes(userId)) {
+                        io.to(`user:${userId}`).emit('sos:priority_alert', { sos, isPriority: true });
+                    }
                 });
                 targets.general.forEach(userId => {
-                    if (!targets.priority.includes(userId)) {
+                    if (!targets.priority.includes(userId) && !targets.guardians.includes(userId)) {
                         io.to(`user:${userId}`).emit('sos:new_alert', { sos, isPriority: false });
                     }
                 });
@@ -429,6 +431,15 @@ const resolveSOS = async (req, res) => {
             resolved_at: resolvedAt,
             response_time_seconds: responseTimeSeconds,
         }).eq('id', req.params.id).select().single();
+
+        // Prevent backlog chain: Also resolve any other stuck active SOSes for this user
+        await supabase.from('sos').update({
+            status: 'resolved',
+            resolved_at: resolvedAt,
+        })
+        .eq('seeker_id', req.user.id)
+        .in('status', ['active', 'responding'])
+        .neq('id', req.params.id);
 
         if (updateError) {
             console.error('[resolveSOS] Error updating SOS:', updateError);
