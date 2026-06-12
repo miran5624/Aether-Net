@@ -1,18 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
     Heart, Car, Flame, ShieldAlert, HelpCircle, Wind, X,
     Baby, Zap, Building2, Scale, PawPrint,
     Waves, Utensils, Users, CheckCircle2,
-    Phone, Copy, Check, Brain, FileText
+    Phone, Copy, Check, Brain, FileText, Sparkles
 } from "lucide-react";
 import api from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
 import { getSocket } from "../../lib/socket";
+import { getEmergencyLocation } from "../../lib/geocoding";
 
-const DETAIL_TYPES = ['Medical', 'Car Problem', 'General Help', 'Mental Health Crisis', 'Legal Emergency'];
+const DETAIL_TYPES = ['Medical', 'Car Problem', 'General Help', 'Mental Health Crisis', 'Legal Emergency', 'Fire', 'Gas Leak'];
 
 const SOS_TYPES = [
     { id: 'Medical', label: 'Medical', icon: Heart, color: 'bg-[#FF3B30]/15 border-[#FF3B30]/40 text-[#FF3B30]' },
@@ -49,28 +50,67 @@ export default function SOSButton() {
     const [activeTab, setActiveTab] = useState<'guidance' | 'script'>('guidance');
     const [activeSOSId, setActiveSOSId] = useState<string | null>(null);
     const [resolving, setResolving] = useState(false);
+    const [isAIPersonalised, setIsAIPersonalised] = useState(false);
+    const [userDescription, setUserDescription] = useState('');
+    const pendingSosIdRef = useRef<string | null>(null);
+    const pendingModalDataRef = useRef<any>({});
+    const fallbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Initial check for active SOS
     useEffect(() => {
         const checkActive = async () => {
             try {
                 const { data } = await api.get('/sos/me/active');
+                console.log('[SOS] 🔍 Active SOS check result:', data);
+                
                 if (data && data.id) {
+                    console.log('[SOS] ⚠️ Found active SOS:', data.id, 'Status:', data.status);
                     setActiveSOSId(data.id);
                     setStep('guidance');
+                    
+                    // Store modal data for call script generation
+                    pendingModalDataRef.current = data.modal_data || {};
+                    
                     // Ensure the modal isn't stuck loading since there's no backend AI event anymore
                     setGuidance(data.first_response_guidance ?
                         data.first_response_guidance.split('\n').filter((l: string) => l.trim().length > 0)
                         : HARDCODED_GUIDANCE[data.type] || GENERIC_GUIDANCE);
 
-                    if (data.call_script) setCallScript(data.call_script);
-                    else setCallScript(generateCallScript(data.type, data.modal_data));
+                    // Validate call script - reject any that look like AI preambles, are incomplete, or too short
+                    const script = data.call_script || '';
+                    const hasValidCallScript = script && 
+                                              script.length > 100 && // Minimum length for complete script
+                                              script.toLowerCase().includes("hello") && // Must have greeting
+                                              (script.toLowerCase().includes("location") || script.toLowerCase().includes("address")) && // Must mention location
+                                              script.toLowerCase().includes("emergency") && // Must mention emergency
+                                              script.toLowerCase().includes("help") && // Must request help
+                                              !script.toLowerCase().includes("okay, here") && // AI preamble
+                                              !script.toLowerCase().includes("here's a script") && // AI preamble
+                                              !script.toLowerCase().includes("here is a script") && // AI preamble
+                                              !script.toLowerCase().includes("realistic script") && // AI preamble
+                                              !script.includes("*caller*") && // Template text
+                                              !script.includes("[") && // Template brackets
+                                              !script.endsWith("We") && // Obvious truncation
+                                              !script.match(/\w{3,}$/) || script.endsWith("."); // Should end with punctuation
+                    
+                    if (hasValidCallScript) {
+                        setCallScript(script);
+                        console.log('[SOS] ✅ Valid call script loaded from DB');
+                    } else {
+                        console.log('[SOS] ⚠️ Invalid/incomplete call script in DB, regenerating...');
+                        console.log('[SOS] Script length:', script.length, 'Content:', script.substring(0, 100));
+                        generateCallScript(data.type, data.modal_data || {}).then(script => {
+                            setCallScript(script);
+                        });
+                    }
 
                     setSelectedType(data.type);
                     setAiLoading(false);
+                } else {
+                    console.log('[SOS] ✅ No active SOS found');
                 }
             } catch (err) {
-                console.error("Failed to check active SOS:", err);
+                console.error("[SOS] ❌ Failed to check active SOS:", err);
             }
         };
         checkActive();
@@ -109,11 +149,104 @@ export default function SOSButton() {
         };
     }, [activeSOSId]);
 
+    // Listen for Gemini sos:ai_ready — swap shimmer for personalised advice
+    // CRITICAL: Register this listener IMMEDIATELY on mount, not in an interval
+    useEffect(() => {
+        const sock = getSocket();
+        
+        const onAIReady = (data: any) => {
+            console.log('[SOS] 🎯 Received sos:ai_ready event:', data);
+            
+            // Match to our pending SOS (ignore events for other SOSes)
+            if (data.sosId && pendingSosIdRef.current && data.sosId !== pendingSosIdRef.current) {
+                console.log('[SOS] ⏭️  Ignoring - different SOS ID');
+                return;
+            }
+
+            console.log('[SOS] ✅ Processing AI response for our SOS!');
+
+            // Cancel the fallback timer since Gemini responded in time
+            if (fallbackTimerRef.current) {
+                console.log('[SOS] ⏱️  Clearing fallback timer - AI arrived in time!');
+                clearTimeout(fallbackTimerRef.current);
+                fallbackTimerRef.current = null;
+            }
+
+            // Check if we actually received valid AI content
+            const hasValidGuidance = data.guidance && data.guidance.trim().length > 0;
+            const hasValidCallScript = data.callScript && data.callScript.trim().length > 0;
+
+            if (hasValidGuidance) {
+                const lines = (data.guidance as string)
+                    .split('\n')
+                    .filter((l: string) => l.trim().length > 0);
+                setGuidance(lines);
+                console.log('[SOS] 📝 Set AI guidance:', lines.length, 'lines');
+                setIsAIPersonalised(true); // Only set if we have valid content
+            } else {
+                console.log('[SOS] ⚠️ No valid guidance received - using fallback');
+                setGuidance(prev => prev.length === 0 ? (HARDCODED_GUIDANCE[selectedType] || GENERIC_GUIDANCE) : prev);
+                setIsAIPersonalised(false);
+            }
+            
+            if (hasValidCallScript) {
+                setCallScript(data.callScript);
+                console.log('[SOS] 📞 Set AI call script');
+            } else {
+                console.log('[SOS] ⚠️ No valid call script - using fallback');
+                generateCallScript(selectedType, pendingModalDataRef.current || {}).then(script => {
+                    setCallScript(script);
+                    console.log('[SOS] 📝 Generated fallback script:', script.substring(0, 80) + '...');
+                });
+            }
+            
+            setAiLoading(false);
+        };
+
+        if (sock) {
+            console.log('[SOS] 🔌 Registered sos:ai_ready listener on socket (socket ID:', sock.id, ')');
+            sock.on('sos:ai_ready', onAIReady);
+            
+            // DEBUG: Listen to ALL events temporarily to see what's being received
+            sock.onAny((eventName: string, ...args: any[]) => {
+                console.log('[SOS] 📡 Received socket event:', eventName, args);
+            });
+        } else {
+            console.warn('[SOS] ⚠️ Socket not available yet - listener not registered!');
+        }
+
+        return () => {
+            if (sock) {
+                console.log('[SOS] 🔌 Removed sos:ai_ready listener');
+                sock.off('sos:ai_ready', onAIReady);
+                sock.offAny();
+            }
+        };
+    }, []);
+
+    // Generate fallback call script when needed
+    useEffect(() => {
+        if (step === 'guidance' && !callScript && !aiLoading && selectedType) {
+            console.log('[SOS] 📝 Generating fallback call script with geocoding...');
+            generateCallScript(selectedType, pendingModalDataRef.current || {}).then(script => {
+                setCallScript(script);
+            });
+        }
+    }, [step, callScript, aiLoading, selectedType]);
+
     const resetAll = () => {
         setStep('initial'); setSelectedType(''); setDetails('');
         setCarMake(''); setCarModel(''); setCarPlate('');
         setGuidance([]); setCallScript(''); setAiLoading(true); setActiveTab('guidance');
         setActiveSOSId(null);
+        setIsAIPersonalised(false);
+        setUserDescription('');
+        pendingSosIdRef.current = null;
+        pendingModalDataRef.current = {};
+        if (fallbackTimerRef.current) {
+            clearTimeout(fallbackTimerRef.current);
+            fallbackTimerRef.current = null;
+        }
     };
     const handleOpen = () => {
         if (activeSOSId) {
@@ -165,9 +298,69 @@ export default function SOSButton() {
         '5. Keep your phone charged and stay where you are.'
     ];
 
-    const generateCallScript = (type: string, data: any) => {
+    const generateCallScript = async (type: string, data: any) => {
         const name = user?.name || 'a NearHelp user';
-        return `I am reporting a ${type.toLowerCase()} emergency. My name is ${name}. I have triggered a community SOS alert and need immediate professional assistance at my location. Please send help.`;
+        const description = data?.description || '';
+        const lat = user?.lat || data?.lat;
+        const lng = user?.lng || data?.lng;
+        const landmark = data?.landmark || '';
+        
+        // Get real address from GPS coordinates
+        let locationInfo = '';
+        if (lat && lng) {
+            try {
+                const address = await getEmergencyLocation(lat, lng, landmark);
+                locationInfo = address;
+                console.log('[SOS] 📍 Location resolved:', locationInfo);
+            } catch (error) {
+                console.error('[SOS] ⚠️ Geocoding failed:', error);
+                locationInfo = landmark || `GPS coordinates ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+            }
+        } else {
+            locationInfo = landmark || 'my current location';
+        }
+        
+        // Base emergency statement
+        let script = `Hello, this is ${name}. I need immediate assistance for a ${type.toLowerCase()} emergency. `;
+        
+        // Add personalized details based on type and description
+        if (type === 'Medical') {
+            const bloodGroup = data?.bloodGroup || user?.bloodGroup;
+            script += `${description || 'I am experiencing a medical emergency'}. `;
+            if (bloodGroup) {
+                script += `My blood group is ${bloodGroup}. `;
+            }
+        } else if (type === 'Fire') {
+            script += `There is a fire ${description ? `involving ${description}` : 'at my location'}. `;
+        } else if (type === 'Gas Leak') {
+            script += `I have detected a gas leak ${description ? `- ${description}` : 'at my location'}. `;
+            script += `I am evacuating now. `;
+        } else if (type === 'Car Problem') {
+            const make = data?.make;
+            const model = data?.model;
+            const plate = data?.plate;
+            script += `My vehicle ${make && model ? `(${make} ${model})` : ''} ${plate ? `with registration number ${plate}` : ''} ${description ? `has ${description}` : 'has broken down'}. `;
+        } else if (type === 'Mental Health Crisis') {
+            script += `I am experiencing a mental health crisis. ${description || 'I need immediate support'}. `;
+        } else {
+            // Generic for other types
+            script += `${description || 'I need immediate help'}. `;
+        }
+        
+        // Add location info with real address - CRITICAL for emergency services
+        script += `My exact location is: ${locationInfo}. `;
+        
+        // Add community alert mention
+        script += `I have triggered a community alert through the NearHelp emergency app. `;
+        
+        // Add urgency for specific types
+        if (['Fire', 'Gas Leak', 'Medical'].includes(type)) {
+            script += `This is an urgent emergency. `;
+        }
+        
+        script += `Please send help immediately. Thank you.`;
+        
+        return script;
     };
     // ─────────────────────────────────────────────────────────
 
@@ -192,16 +385,40 @@ export default function SOSButton() {
             });
         }
 
-        // Instantly set the hardcoded local AI response so there's zero delay
-        setGuidance(HARDCODED_GUIDANCE[type] || GENERIC_GUIDANCE);
-        setCallScript(generateCallScript(type, modalData));
-        setAiLoading(false); // Never show loading spinner
+        // Store description so the AI badge can reference it
+        const desc = modalData?.description || '';
+        setUserDescription(desc);
+        
+        // Store modalData in ref so we can access it in socket listeners
+        pendingModalDataRef.current = modalData;
+
+        // Keep aiLoading = true → show shimmer while Gemini generates personalised advice
+        // The sos:ai_ready socket event (wired above) will swap it in when ready
 
         try {
             // always send real GPS in request body
             const { data } = await api.post('/sos/create', { type, modalData, lat, lng });
-            setActiveSOSId(data.id || data._id || 'temp-id');
+            const sosId = data.id || data._id || 'temp-id';
+            pendingSosIdRef.current = sosId;
+            setActiveSOSId(sosId);
             setStep('guidance');
+
+            // Extended fallback: if Gemini hasn't responded in 20 seconds (increased from 8), show fallback
+            // This gives AI more time especially when models are under high demand
+            fallbackTimerRef.current = setTimeout(async () => {
+                console.warn('[SOS] AI response timeout - using fallback guidance');
+                setGuidance(prev => prev.length === 0 ? (HARDCODED_GUIDANCE[type] || GENERIC_GUIDANCE) : prev);
+                
+                // Generate fallback call script with async geocoding
+                if (!callScript) {
+                    const fallbackScript = await generateCallScript(type, pendingModalDataRef.current || modalData);
+                    setCallScript(fallbackScript);
+                }
+                
+                setIsAIPersonalised(false);
+                setAiLoading(false);
+                fallbackTimerRef.current = null;
+            }, 20000); // Increased from 8000ms to 20000ms (20 seconds)
         } catch (err: any) {
             alert(err.response?.data?.message || 'Failed to trigger SOS.');
             handleClose();
@@ -211,15 +428,26 @@ export default function SOSButton() {
     };
 
     const resolveSOS = async () => {
-        if (!activeSOSId) return;
+        if (!activeSOSId) {
+            console.error('[SOS] ❌ Cannot resolve - no active SOS ID');
+            return;
+        }
+        
+        console.log('[SOS] 🔄 Attempting to resolve SOS:', activeSOSId);
         setResolving(true);
+        
         try {
-            await api.post(`/sos/${activeSOSId}/resolve`);
+            const response = await api.post(`/sos/${activeSOSId}/resolve`);
+            console.log('[SOS] ✅ Resolve API response:', response.data);
+            
             resetAll();
             setIsOpen(false);
-            // Flash success message or trigger a re-fetch of stats if needed
+            
             alert('SOS Resolved. We hope you are safe!');
+            console.log('[SOS] ✅ SOS resolved successfully, state reset');
         } catch (err: any) {
+            console.error('[SOS] ❌ Resolve error:', err);
+            console.error('[SOS] ❌ Error response:', err.response?.data);
             alert(err.response?.data?.message || 'Failed to resolve SOS.');
         } finally {
             setResolving(false);
@@ -271,18 +499,23 @@ export default function SOSButton() {
                             initial={{ opacity: 0, y: 40 }}
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: 40 }}
-                            className="relative w-full max-w-lg overflow-hidden rounded-3xl bg-[#161618] border border-[#2a2a2e] p-7 shadow-2xl"
+                            className="relative w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden rounded-3xl bg-[#161618] border border-[#2a2a2e] shadow-2xl"
                         >
-                            <button onClick={handleClose} className="absolute right-5 top-5 rounded-full bg-[#1E1E22] p-2 text-[#A0A0A8] hover:text-white transition-colors">
-                                <X className="h-4 w-4" />
-                            </button>
+                            {/* Fixed Header with Close Button */}
+                            <div className="relative p-7 pb-4 shrink-0">
+                                <button onClick={handleClose} className="absolute right-5 top-5 rounded-full bg-[#1E1E22] p-2 text-[#A0A0A8] hover:text-white transition-colors z-10">
+                                    <X className="h-4 w-4" />
+                                </button>
+                            </div>
 
+                            {/* Scrollable Content Area */}
+                            <div className="flex-1 overflow-y-auto px-7 pb-7 -mt-4">
                             {/* STEP 1 — TYPE GRID */}
                             {step === 'initial' && (
                                 <div>
                                     <h2 className="text-xl font-bold text-white mb-1">What's your emergency?</h2>
                                     <p className="text-xs text-[#A0A0A8] mb-5">Skill-matched responders nearby are prioritised automatically.</p>
-                                    <div className="grid grid-cols-3 gap-2.5 max-h-[60vh] overflow-y-auto pr-0.5">
+                                    <div className="grid grid-cols-3 gap-2.5">
                                         {SOS_TYPES.map(({ id, label, icon: Icon, color }) => (
                                             <motion.button
                                                 key={id}
@@ -321,7 +554,13 @@ export default function SOSButton() {
                                             value={details}
                                             onChange={e => setDetails(e.target.value)}
                                             className="w-full bg-[#0a0a0a] border border-[#2a2a2e] rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-[#FF3B30]/50 min-h-[80px]"
-                                            placeholder="Any additional details..."
+                                            placeholder={
+                                                selectedType === 'Fire' ? 'Describe the fire location, size, and what\'s burning...' :
+                                                selectedType === 'Gas Leak' ? 'Describe the gas source, smell intensity, and affected area...' :
+                                                selectedType === 'Medical' ? 'Describe symptoms, severity, and any allergies...' :
+                                                selectedType === 'Mental Health Crisis' ? 'Describe the situation and immediate concerns...' :
+                                                'Any additional details...'
+                                            }
                                         />
                                         <button onClick={handleDetailsSubmit} disabled={loading} className="w-full bg-[#FF3B30] hover:bg-[#CC2A20] disabled:opacity-50 text-white font-bold rounded-2xl py-4 transition-colors">
                                             {loading ? 'Broadcasting...' : 'Broadcast SOS Now'}
@@ -365,24 +604,48 @@ export default function SOSButton() {
 
                                     {/* Tab: Guidance */}
                                     {activeTab === 'guidance' && (
-                                        <div className="bg-[#0a0a0a] rounded-2xl border border-[#2a2a2e] p-4 min-h-[140px]">
-                                            {aiLoading ? (
-                                                <div className="flex flex-col gap-2 animate-pulse">
-                                                    <p className="text-xs text-[#A0A0A8] mb-2">AI is generating guidance...</p>
-                                                    {[1, 2, 3, 4, 5].map(i => (
-                                                        <div key={i} className="h-3 bg-[#1E1E22] rounded" style={{ width: `${75 + i * 5}%` }} />
-                                                    ))}
-                                                </div>
-                                            ) : (
-                                                <div className="space-y-2.5">
-                                                    {guidance.map((line, i) => (
-                                                        <div key={i} className="flex gap-2.5">
-                                                            <span className="text-[#FF3B30] font-black text-sm shrink-0 w-4">{i + 1}.</span>
-                                                            <p className="text-sm text-white/85 leading-snug">{line.replace(/^[0-9.•\-]+\s*/, '')}</p>
-                                                        </div>
-                                                    ))}
+                                        <div>
+                                            {/* AI Personalised badge — shown once Gemini responds */}
+                                            {isAIPersonalised && !aiLoading && (
+                                                <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-xl bg-violet-500/10 border border-violet-500/20">
+                                                    <Sparkles className="h-3.5 w-3.5 text-violet-400 shrink-0 mt-0.5" />
+                                                    <div className="min-w-0">
+                                                        <span className="text-xs font-semibold text-violet-400">AI Personalised for your situation</span>
+                                                        {userDescription && (
+                                                            <p className="text-[11px] text-[#A0A0A8] truncate mt-0.5">
+                                                                Based on: &quot;{userDescription.slice(0, 60)}{userDescription.length > 60 ? '…' : ''}&quot;
+                                                            </p>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )}
+
+                                            <div className="bg-[#0a0a0a] rounded-2xl border border-[#2a2a2e] p-4 min-h-[140px]">
+                                                {aiLoading ? (
+                                                    <div className="flex flex-col gap-2">
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <Sparkles className="h-3.5 w-3.5 text-violet-400 animate-pulse" />
+                                                            <p className="text-xs text-[#A0A0A8]">Gemini is personalising your advice…</p>
+                                                        </div>
+                                                        {[1, 2, 3, 4, 5, 6].map(i => (
+                                                            <div
+                                                                key={i}
+                                                                className="h-3 bg-[#1E1E22] rounded animate-pulse"
+                                                                style={{ width: `${60 + (i % 3) * 15}%`, animationDelay: `${i * 80}ms` }}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-2.5">
+                                                        {(guidance.length > 0 ? guidance : (HARDCODED_GUIDANCE[selectedType] || GENERIC_GUIDANCE)).map((line, i) => (
+                                                            <div key={i} className="flex gap-2.5">
+                                                                <span className="text-[#FF3B30] font-black text-sm shrink-0 w-4">{i + 1}.</span>
+                                                                <p className="text-sm text-white/85 leading-snug">{line.replace(/^[0-9.•\-]+\s*/, '')}</p>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     )}
 
@@ -396,7 +659,7 @@ export default function SOSButton() {
                                                         {[1, 2, 3].map(i => <div key={i} className="h-3 bg-[#1E1E22] rounded" style={{ width: `${60 + i * 15}%` }} />)}
                                                     </div>
                                                 ) : (
-                                                    <p className="text-sm text-white leading-relaxed italic">{callScript}</p>
+                                                    <p className="text-sm text-white leading-relaxed italic">{callScript || 'Generating location-aware call script...'}</p>
                                                 )}
                                             </div>
                                             <button
@@ -427,6 +690,8 @@ export default function SOSButton() {
                                     </div>
                                 </div>
                             )}
+                            </div>
+                            {/* End Scrollable Content */}
                         </motion.div>
                     </div>
                 )}
