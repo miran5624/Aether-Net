@@ -40,7 +40,18 @@ const register = async (req, res) => {
             maxAge: 7 * 24 * 60 * 60 * 1000,
         });
 
-        res.status(201).json({ _id: user.id, name: user.name, email: user.email, phone: user.phone, token: accessToken });
+        res.status(201).json({ 
+            _id: user.id, 
+            name: user.name, 
+            email: user.email, 
+            phone: user.phone, 
+            age: user.age,
+            blood_group: user.blood_group,
+            health_conditions: user.health_conditions,
+            is_physically_disabled: user.is_physically_disabled,
+            skills: user.skills,
+            token: accessToken 
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server Error', error: error.message });
@@ -72,7 +83,19 @@ const login = async (req, res) => {
             maxAge: 7 * 24 * 60 * 60 * 1000,
         });
 
-        res.json({ _id: user.id, name: user.name, email: user.email, phone: user.phone, location: { lat: user.lat, lng: user.lng }, token: accessToken });
+        res.json({ 
+            _id: user.id, 
+            name: user.name, 
+            email: user.email, 
+            phone: user.phone, 
+            age: user.age,
+            blood_group: user.blood_group,
+            health_conditions: user.health_conditions,
+            is_physically_disabled: user.is_physically_disabled,
+            skills: user.skills,
+            location: { lat: user.lat, lng: user.lng }, 
+            token: accessToken 
+        });
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Server Error' });

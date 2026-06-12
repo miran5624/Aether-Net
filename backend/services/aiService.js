@@ -12,6 +12,8 @@ const { getEmergencyLocation } = require('../utils/geocoding');
 // Initialize the SDK using process.env.GEMINI_API_KEY automatically
 const ai = new GoogleGenAI({});
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 // ─── MARKDOWN STRIPPER ────────────────────────────────────────
 /**
  * Remove markdown formatting from AI-generated text
@@ -99,9 +101,13 @@ async function callGemini(prompt) {
             //    model. Each model has its own separate free-tier quota bucket, so
             //    falling through to the next model is exactly the right move.
             if (code === 429) {
-                console.warn(`[aiService] ⚠️ ${modelName} quota exhausted (429), trying next model...`);
+                console.warn(`[aiService] ⚠️ ${modelName} quota exhausted (429), waiting before trying next model...`);
+                const delayMs = 1000 * Math.pow(2, models.indexOf(modelName));
+                await delay(delayMs);
             } else if (code === 503) {
-                console.warn(`[aiService] ⚠️ ${modelName} overloaded (503), trying next model...`);
+                console.warn(`[aiService] ⚠️ ${modelName} overloaded (503), waiting before trying next model...`);
+                const delayMs = 1000 * Math.pow(2, models.indexOf(modelName));
+                await delay(delayMs);
             } else {
                 console.warn(`[aiService] ⚠️ ${modelName} failed (code: ${code ?? 'unknown'}), trying next model. Reason: ${rawMessage}`);
             }
@@ -163,20 +169,16 @@ const generateCallScript = async (sosType, modalData, userProfile, locationHint 
         }
     }
 
-    let contextDetails = '';
+    let contextDetails = `Blood Group: ${bloodGroup || 'Unknown'}\nHealth Conditions: ${healthConditions || 'None reported'}\n`;
     
     // Add type-specific context
-    if (sosType === 'Medical') {
-        contextDetails = `Blood Group: ${bloodGroup || 'Unknown'}\nHealth Conditions: ${healthConditions || 'None reported'}\nLocation: ${locationInfo}`;
-    } else if (sosType === 'Car Problem') {
+    if (sosType === 'Car Problem') {
         const make = modalData?.make || '';
         const model = modalData?.model || '';
         const plate = modalData?.plate || '';
-        contextDetails = `Vehicle: ${make} ${model}\nPlate Number: ${plate}\nLocation: ${locationInfo}`;
-    } else if (sosType === 'Fire' || sosType === 'Gas Leak') {
-        contextDetails = `Location: ${locationInfo}`;
+        contextDetails += `Vehicle: ${make} ${model}\nPlate Number: ${plate}\nLocation: ${locationInfo}`;
     } else {
-        contextDetails = `Location: ${locationInfo}`;
+        contextDetails += `Location: ${locationInfo}`;
     }
 
     const prompt = `You are helping prepare an emergency call script for calling 112 in India.
@@ -196,7 +198,7 @@ TASK: Write the EXACT words the caller should speak to the 112 emergency dispatc
 3. Clearly state the emergency type
 4. Describe the specific situation
 5. State the COMPLETE location address (CRITICAL - say the full address exactly as provided above)
-6. Mention medical details if relevant (blood group, conditions)
+6. CRITICAL: You MUST explicitly state the caller's blood group in the script (e.g., "My blood group is ${bloodGroup || 'Unknown'}").
 7. Request immediate assistance
 8. Mention that a NearHelp community alert has been triggered
 9. End with urgency if life-threatening
