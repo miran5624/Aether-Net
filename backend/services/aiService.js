@@ -32,15 +32,11 @@ function stripMarkdown(text) {
         .replace(/`(.+?)`/g, '$1')
         // Remove headers: ## text or ### text
         .replace(/^#{1,6}\s+/gm, '')
-        // Remove bullet points: - text or * text
-        .replace(/^[-*]\s+/gm, '')
-        // Remove numbered lists: 1. text
-        .replace(/^\d+\.\s+/gm, '')
         // Clean up any remaining asterisks or underscores
         .replace(/\*+/g, '')
         .replace(/_+/g, '')
-        // Clean up extra whitespace
-        .replace(/\s+/g, ' ')
+        // Clean up extra spaces but KEEP newlines
+        .replace(/[ \t]{2,}/g, ' ')
         .trim();
 }
 
@@ -131,7 +127,9 @@ User-Provided Crisis Context:
 - Blood group: ${bloodGroup || 'Not specified'}
 
 Task:
-Analyze the specific situation details. If the description mentions a low-severity issue (like a simple headache), provide calm relief tips. If the description indicates a high-severity crisis (like a heart attack, deep wound, or cardiac distress), immediately list life-saving emergency actions. Provide relevant emergency dispatch numbers (like 108 for medical or 112) depending on what the severity demands.`;
+Analyze the specific situation details. If the description mentions a low-severity issue (like a simple headache), provide calm relief tips. If the description indicates a high-severity crisis (like a heart attack, deep wound, or cardiac distress), immediately list life-saving emergency actions. 
+Provide relevant emergency dispatch numbers (like 108 for medical or 112) depending on what the severity demands.
+CRITICAL: Format your response as a clear, readable numbered list with each step on a new line. Do not write a single block of text.`;
 
     try {
         return await callGemini(prompt);
