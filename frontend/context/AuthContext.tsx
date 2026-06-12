@@ -37,7 +37,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         try {
             const { data } = await api.post('/auth/login', { email, password });
             setAccessToken(data.token);
-            setUser({ _id: data._id, name: data.name, email: data.email, phone: data.phone, location: data.location });
+            setUser({ 
+                _id: data._id, 
+                name: data.name, 
+                email: data.email, 
+                phone: data.phone, 
+                location: data.location,
+                age: data.age,
+                blood_group: data.blood_group,
+                health_conditions: data.health_conditions,
+                is_physically_disabled: data.is_physically_disabled,
+                skills: data.skills
+            });
             connectSocket(data.token);
             // Mark online immediately on login
             api.put('/users/location', data.location || { lat: 0, lng: 0 }).catch(console.error);
@@ -53,7 +64,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
             // Assuming register auto-logs in or returns token based on backend
             // Our backend registers and sets cookies + accessToken
             setAccessToken(data.token);
-            setUser({ _id: data._id, name: data.name, email: data.email, phone: data.phone });
+            setUser({ 
+                _id: data._id, 
+                name: data.name, 
+                email: data.email, 
+                phone: data.phone,
+                age: data.age,
+                blood_group: data.blood_group,
+                health_conditions: data.health_conditions,
+                is_physically_disabled: data.is_physically_disabled,
+                skills: data.skills
+            });
             connectSocket(data.token);
             // Mark online immediately on register
             api.put('/users/location', { lat: 0, lng: 0 }).catch(console.error);

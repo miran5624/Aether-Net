@@ -45,9 +45,9 @@ export default function ProfileCard() {
             setProfile({
                 name: user.name || '',
                 age: user.age || '',
-                bloodGroup: user.bloodGroup || '',
-                healthConditions: user.healthConditions || '',
-                isPhysicallyDisabled: user.isPhysicallyDisabled || false,
+                bloodGroup: user.blood_group || '',
+                healthConditions: user.health_conditions || '',
+                isPhysicallyDisabled: user.is_physically_disabled || false,
             });
             setSelectedSkills(user.skills || []);
         }

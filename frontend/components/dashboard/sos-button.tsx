@@ -325,7 +325,7 @@ export default function SOSButton() {
         
         // Add personalized details based on type and description
         if (type === 'Medical') {
-            const bloodGroup = data?.bloodGroup || user?.bloodGroup;
+            const bloodGroup = data?.bloodGroup || user?.blood_group;
             script += `${description || 'I am experiencing a medical emergency'}. `;
             if (bloodGroup) {
                 script += `My blood group is ${bloodGroup}. `;
@@ -462,7 +462,7 @@ export default function SOSButton() {
 
     const handleDetailsSubmit = () => {
         let modalData: any = { description: details };
-        if (selectedType === 'Medical') modalData = { description: details, bloodGroup: user?.bloodGroup };
+        if (selectedType === 'Medical') modalData = { description: details, bloodGroup: user?.blood_group };
         else if (selectedType === 'Car Problem') modalData = { make: carMake, model: carModel, plate: carPlate, description: details };
         submitSOS(selectedType, modalData);
     };
@@ -540,7 +540,7 @@ export default function SOSButton() {
                                         {selectedType === 'Medical' && (
                                             <div>
                                                 <label className="text-xs text-[#A0A0A8]">Blood Group (auto-filled)</label>
-                                                <input disabled value={user?.bloodGroup || 'Unknown'} className="w-full bg-[#0a0a0a] border border-[#2a2a2e] rounded-xl px-4 py-3 mt-1 text-white/60 text-sm" />
+                                                <input disabled value={user?.blood_group || 'Unknown'} className="w-full bg-[#0a0a0a] border border-[#2a2a2e] rounded-xl px-4 py-3 mt-1 text-white/60 text-sm" />
                                             </div>
                                         )}
                                         {selectedType === 'Car Problem' && (
