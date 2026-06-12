@@ -142,6 +142,16 @@ interface Message {
   text: string;
 }
 
+function renderMessageText(text: string) {
+  const parts = text.split(/(\*\*.*?\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**') && part.length >= 4) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
 export default function AiAssistantCard({ guidance, activeSOS }: { guidance?: string[]; activeSOS?: any }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([{
@@ -220,7 +230,7 @@ export default function AiAssistantCard({ guidance, activeSOS }: { guidance?: st
                 ? "bg-[#161618] text-white rounded-tr-sm"
                 : "bg-[#F7F7F8] text-black rounded-tl-sm"
               }`}>
-              {msg.text}
+              {renderMessageText(msg.text)}
             </div>
             {msg.role === "user" && (
               <div className="h-6 w-6 rounded-full bg-[#161618] flex items-center justify-center shrink-0 mt-0.5">
