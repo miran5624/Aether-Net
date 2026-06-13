@@ -10,7 +10,7 @@ const SignupMap = dynamic(() => import('./signup-map'), { ssr: false });
 
 export default function SignupPage() {
     const router = useRouter();
-    const { register } = useAuth();
+    const { register, setUser, user } = useAuth();
 
     const [step, setStep] = useState(1);
 
@@ -59,12 +59,13 @@ export default function SignupPage() {
         e.preventDefault();
         setError(""); setLoading(true);
         try {
-            await api.put("/users/profile", {
+            const res = await api.put("/users/profile", {
                 age: parseInt(profileData.age) || null,
                 isPhysicallyDisabled: profileData.isPhysicallyDisabled,
                 bloodGroup: profileData.bloodGroup,
                 healthConditions: profileData.healthConditions
             });
+            setUser({ ...user, ...res.data, blood_group: res.data.blood_group });
             setStep(3);
         } catch (err: any) {
             setError(err.response?.data?.message || err.message || "Profile update failed");
@@ -75,7 +76,8 @@ export default function SignupPage() {
         e.preventDefault();
         setError(""); setLoading(true);
         try {
-            await api.put("/users/skills", { skills });
+            const res = await api.put("/users/skills", { skills });
+            setUser({ ...user, skills: res.data.skills });
             setStep(4);
         } catch (err: any) {
             setError(err.response?.data?.message || err.message || "Skills update failed");

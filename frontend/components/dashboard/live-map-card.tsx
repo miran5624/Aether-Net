@@ -258,7 +258,7 @@ export default function LiveMapCard() {
       {/* Card header */}
       <div className="mb-4">
         <h2 className="text-base font-semibold text-black">Live Incident Map</h2>
-        <p className="text-xs text-[#A0A0A8] mt-0.5">5km community radius — Adityapur, Jamshedpur</p>
+        <p className="text-xs text-[#A0A0A8] mt-0.5">5km community radius</p>
       </div>
 
       {/* Map area */}

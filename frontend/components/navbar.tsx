@@ -48,16 +48,24 @@ export default function Navbar({
   dashboardHref = "/dashboard",
 }: NavbarAuthProps) {
   const [scrolled, setScrolled] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const contracted = scrolled || isMobile;
   const [activeSection, setActiveSection] = useState("hero");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [showEmergency, setShowEmergency] = useState(false);
 
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 50);
-    window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
-    return () => window.removeEventListener("scroll", onScroll);
-  }, []);
+    const checkMobile = () => setIsMobile(window.innerWidth < 768)
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    const onScroll = () => setScrolled(window.scrollY > 50)
+    window.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', checkMobile)
+    }
+  }, [])
 
   useEffect(() => {
     const ids = ["hero", "about", "services", "faqs"];
@@ -87,10 +95,10 @@ export default function Navbar({
         initial={{ y: -56, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.45, ease: "easeOut" }}
-        className="fixed top-4 left-0 right-0 z-50 flex items-center justify-center pointer-events-none px-4"
+        className="fixed top-4 left-0 right-0 z-50 flex items-center justify-center pointer-events-none px-2 md:px-4"
       >
         {/* Single inline flex row — all three elements in one line */}
-        <div className="pointer-events-auto flex items-center gap-2">
+        <div className="pointer-events-auto flex items-center gap-1.5 md:gap-2">
 
           {/* LEFT — hamburger pill (always visible) */}
           <button
@@ -102,7 +110,7 @@ export default function Navbar({
           </button>
 
           {/* CENTER — logo + nav links pill */}
-          <div className="flex items-center gap-2 border-2 border-[#080808] bg-[#161618] rounded-full px-3 py-1.5 shadow-2xl">
+          <div className="flex items-center gap-1.5 border-2 border-[#080808] bg-[#161618] rounded-full px-2 py-1.5 md:px-3 md:gap-2 shadow-2xl">
             {/* Logo */}
             <button
               onClick={() => scrollTo("hero")}
@@ -130,7 +138,7 @@ export default function Navbar({
                   >
                     <Icon className="w-4 h-4 shrink-0" />
                     <AnimatePresence initial={false}>
-                      {!scrolled && (
+                      {!contracted && (
                         <motion.span
                           key="label"
                           initial={{ opacity: 0, width: 0 }}
@@ -152,11 +160,11 @@ export default function Navbar({
           {/* EMERGENCY PILL — between nav and auth */}
           <button
             onClick={() => setShowEmergency(true)}
-            className="flex items-center gap-1.5 border-2 border-[#CC2A20] bg-[#FF3B30] rounded-full px-3 py-1.5 shadow-2xl hover:bg-[#CC2A20] transition-colors shrink-0"
+            className="flex items-center gap-1.5 border-2 border-[#CC2A20] bg-[#FF3B30] rounded-full px-2 py-1.5 md:px-3 shadow-2xl hover:bg-[#CC2A20] transition-colors shrink-0"
           >
             <Phone className="w-4 h-4 text-white" />
             <AnimatePresence initial={false}>
-              {!scrolled && (
+              {!contracted && (
                 <motion.span
                   key="em-label"
                   initial={{ opacity: 0, width: 0 }}
@@ -172,7 +180,7 @@ export default function Navbar({
           </button>
 
           {/* RIGHT — auth pill */}
-          <div className="flex items-center gap-1 border-2 border-[#080808] bg-[#161618] rounded-full px-2 py-1.5 shadow-2xl shrink-0">
+          <div className="flex items-center gap-0.5 border-2 border-[#080808] bg-[#161618] rounded-full px-1.5 py-1.5 md:px-2 md:gap-1 shadow-2xl shrink-0">
             {isAuthenticated ? (
               <Link
                 href={dashboardHref}
@@ -181,7 +189,7 @@ export default function Navbar({
               >
                 <LayoutDashboard className="w-4 h-4 shrink-0" />
                 <AnimatePresence initial={false}>
-                  {!scrolled && (
+                  {!contracted && (
                     <motion.span
                       key="dash-label"
                       initial={{ opacity: 0, width: 0 }}
@@ -204,7 +212,7 @@ export default function Navbar({
                   >
                     <Ghost className="w-4 h-4 shrink-0" />
                     <AnimatePresence initial={false}>
-                      {!scrolled && (
+                      {!contracted && (
                         <motion.span
                           key="anon-label"
                           initial={{ opacity: 0, width: 0 }}
@@ -228,7 +236,7 @@ export default function Navbar({
                   >
                     <LogIn className="w-4 h-4 shrink-0" />
                     <AnimatePresence initial={false}>
-                      {!scrolled && (
+                      {!contracted && (
                         <motion.span
                           key="signin-label"
                           initial={{ opacity: 0, width: 0 }}
@@ -252,7 +260,7 @@ export default function Navbar({
                   >
                     <UserPlus className="w-4 h-4 shrink-0" />
                     <AnimatePresence initial={false}>
-                      {!scrolled && (
+                      {!contracted && (
                         <motion.span
                           key="getstarted-label"
                           initial={{ opacity: 0, width: 0 }}

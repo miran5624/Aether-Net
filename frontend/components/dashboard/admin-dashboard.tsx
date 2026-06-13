@@ -8,6 +8,7 @@ import { BarChart2, Users, AlertTriangle, CheckCircle, MapPin, ShieldAlert } fro
 import dynamic from "next/dynamic";
 
 const AdminMap = dynamic(() => import("./responder-map"), { ssr: false });
+const HistoricalHeatmap = dynamic(() => import("./historical-heatmap"), { ssr: false });
 
 export default function AdminDashboard() {
     const { user } = useAuth();
@@ -17,17 +18,23 @@ export default function AdminDashboard() {
     const [skillQueue, setSkillQueue] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedSos, setSelectedSos] = useState<any | null>(null);
+    const [heatmapData, setHeatmapData] = useState<any[]>([]);
+    const [mapMode, setMapMode] = useState<'live' | 'heatmap'>('live');
 
     const fetchAdminData = async () => {
         try {
-            const [analyticsRes, liveRes, usersRes, skillsRes] = await Promise.allSettled([
+            const [analyticsRes, liveRes, usersRes, skillsRes, heatmapRes] = await Promise.allSettled([
                 api.get('/admin/analytics'),
                 api.get('/admin/live-map'),
                 api.get('/admin/users'),
                 api.get('/admin/skills/queue'),
+                api.get('/admin/analytics/heatmap'),
             ]);
             if (analyticsRes.status === 'fulfilled') setAnalytics(analyticsRes.value.data);
             if (liveRes.status === 'fulfilled') setActiveSOS(liveRes.value.data.activeSOS || []);
+            if (usersRes.status === 'fulfilled') setFlaggedUsers((usersRes.value.data || []).filter((u: any) => u.falseAlertCount > 1));
+            if (skillsRes.status === 'fulfilled') setSkillQueue(skillsRes.value.data || []);
+            if (heatmapRes.status === 'fulfilled') setHeatmapData(heatmapRes.value.data || []);
             if (usersRes.status === 'fulfilled') setFlaggedUsers((usersRes.value.data || []).filter((u: any) => u.falseAlertCount > 1));
             if (skillsRes.status === 'fulfilled') setSkillQueue(skillsRes.value.data || []);
         } catch (err) {
@@ -88,9 +95,25 @@ export default function AdminDashboard() {
 
     return (
         <div className="space-y-6">
-            <div>
-                <h2 className="text-2xl font-bold text-[#161618]">Admin Live Dashboard</h2>
-                <p className="text-xs text-gray-400 mt-1">Logged in as <span className="font-semibold text-[#FF3B30]">{user?.email}</span></p>
+            <div className="flex justify-between items-end">
+                <div>
+                    <h2 className="text-2xl font-bold text-[#161618]">Admin Live Dashboard</h2>
+                    <p className="text-xs text-gray-400 mt-1">Logged in as <span className="font-semibold text-[#FF3B30]">{user?.email}</span></p>
+                </div>
+                <div className="flex bg-gray-100 p-1 rounded-xl">
+                    <button 
+                        onClick={() => setMapMode('live')}
+                        className={`px-4 py-1.5 text-sm font-semibold rounded-lg transition-colors ${mapMode === 'live' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        Live Incidents
+                    </button>
+                    <button 
+                        onClick={() => setMapMode('heatmap')}
+                        className={`px-4 py-1.5 text-sm font-semibold rounded-lg transition-colors ${mapMode === 'heatmap' ? 'bg-white text-red-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        Historical Heatmap
+                    </button>
+                </div>
             </div>
 
             {/* Analytics Row */}
@@ -114,7 +137,9 @@ export default function AdminDashboard() {
             {/* Live Map + SOS list side by side */}
             <div className="grid grid-cols-3 gap-4">
                 <div className="col-span-2 h-72 rounded-2xl overflow-hidden border border-gray-200">
-                    {selectedSos ? (
+                    {mapMode === 'heatmap' ? (
+                        <HistoricalHeatmap data={heatmapData} />
+                    ) : selectedSos ? (
                         <AdminMap sos={selectedSos} user={user} />
                     ) : activeSOS.length > 0 ? (
                         <AdminMap sos={activeSOS[0]} user={user} />
