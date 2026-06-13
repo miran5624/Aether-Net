@@ -44,8 +44,8 @@ interface MutualPayload {
     _id?: string;
     sosType: string;
     modalData?: any;
-    seeker: { id: string; name: string; lat: number; lng: number; bloodGroup?: string; healthConditions?: string };
-    responder: { id: string; name: string; lat: number; lng: number; skills?: string[]; trustScore?: number };
+    seeker: { id: string; _id?: string; name: string; lat: number; lng: number; bloodGroup?: string; healthConditions?: string };
+    responder: { id: string; _id?: string; name: string; lat: number; lng: number; skills?: string[]; trustScore?: number };
     seekerLocation?: { lat: number; lng: number };
 }
 
@@ -393,8 +393,8 @@ export default function MutualResponseView({ payload, currentUser, onClose }: Mu
                                 <MapPin className="w-3 h-3" />
                                 <span>{distanceKm} km apart</span>
                             </div>
-                            {etaMin && (
-                                <p className="text-[10px] text-[#A0A0A8] mt-0.5">ETA: ~{etaMin} min on foot</p>
+                            {etaMin !== null && (
+                                <p className="text-[10px] text-[#A0A0A8] mt-0.5">ETA: {etaMin === 0 ? '<1' : `~${etaMin}`} min</p>
                             )}
                         </div>
                     )}
