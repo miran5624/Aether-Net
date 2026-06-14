@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import api from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
+import { getSocket } from "../../lib/socket";
 import { UserPlus, Trash2, Shield, AlertTriangle } from "lucide-react";
 
 export default function GuardiansCard() {
@@ -31,7 +32,16 @@ export default function GuardiansCard() {
         }
     };
 
-    useEffect(() => { fetchGuardians(); }, []);
+    useEffect(() => { 
+        fetchGuardians(); 
+        const socket = getSocket();
+        if (socket) {
+            socket.on('guardian:updated', fetchGuardians);
+            return () => {
+                socket.off('guardian:updated', fetchGuardians);
+            };
+        }
+    }, []);
 
     const addGuardian = async (e: React.FormEvent) => {
         e.preventDefault();
