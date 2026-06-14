@@ -76,18 +76,32 @@ const submitSeekerRating = async (req, res) => {
 
 // Helper function to update trust score and handle auto-suspension
 async function updateUserTrustScore(userId, stars) {
-    const { data: user } = await supabase.from('users')
-        .select('rating_sum, total_ratings, one_star_count, name')
+    const { data: user, error: userError } = await supabase.from('users')
+        .select('*')
         .eq('id', userId)
         .single();
     
+    if (userError) {
+        console.error('[Ratings] ❌ Error fetching user for trust score update:', userError);
+        return;
+    }
+
     if (user) {
         const newSum = (user.rating_sum || 0) + stars;
         const newCount = (user.total_ratings || 0) + 1;
         const newScore = Math.round((newSum / newCount) * 10) / 10;
         
-        // Track one-star ratings
-        const newOneStarCount = stars === 1 ? (user.one_star_count || 0) + 1 : (user.one_star_count || 0);
+        // Count one-star ratings dynamically instead of relying on a potentially missing column
+        const { count: oneStarCount, error: countError } = await supabase.from('ratings')
+            .select('*', { count: 'exact', head: true })
+            .eq('responder_id', userId)
+            .eq('stars', 1);
+
+        if (countError) {
+            console.error('[Ratings] ❌ Error counting one-star ratings:', countError);
+        }
+
+        const newOneStarCount = (oneStarCount || 0) + (stars === 1 ? 1 : 0);
         
         // Auto-suspend if user has received more than 3 one-star ratings
         const shouldSuspend = newOneStarCount > 3;
@@ -95,8 +109,7 @@ async function updateUserTrustScore(userId, stars) {
         const updateData = {
             rating_sum: newSum,
             total_ratings: newCount,
-            trust_score: newScore,
-            one_star_count: newOneStarCount
+            trust_score: newScore
         };
         
         if (shouldSuspend) {
@@ -104,9 +117,12 @@ async function updateUserTrustScore(userId, stars) {
             console.log(`[Ratings] 🚫 User ${user.name} (${userId}) auto-suspended after ${newOneStarCount} one-star ratings`);
         }
         
-        await supabase.from('users').update(updateData).eq('id', userId);
-        
-        console.log(`[Ratings] ✅ Updated trust score for ${user.name}: ${newScore} (${newCount} ratings, ${newOneStarCount} one-stars)${shouldSuspend ? ' - SUSPENDED' : ''}`);
+        const { error: updateError } = await supabase.from('users').update(updateData).eq('id', userId);
+        if (updateError) {
+            console.error('[Ratings] ❌ Error updating trust score:', updateError);
+        } else {
+            console.log(`[Ratings] ✅ Updated trust score for ${user.name}: ${newScore} (${newCount} ratings, ${newOneStarCount} one-stars)${shouldSuspend ? ' - SUSPENDED' : ''}`);
+        }
     }
 }
 
