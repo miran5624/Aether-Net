@@ -130,9 +130,6 @@ export default function SosFeedCard({ onRespond }: { onRespond?: (sos: any) => v
             if (sos) {
               const conf = typeConfig[sos.type] || typeConfig["General Help"];
               const Icon = conf.icon;
-              const rawDate = sos.created_at || sos.createdAt;
-              const dateObj = new Date(rawDate.endsWith('Z') || rawDate.includes('+') ? rawDate : rawDate + 'Z');
-              const timeString = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
               return (
                 <motion.li
@@ -152,7 +149,7 @@ export default function SosFeedCard({ onRespond }: { onRespond?: (sos: any) => v
                     {/* Text */}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold text-[#161618] truncate">{sos.type}</p>
-                      <p className="text-xs text-[#A0A0A8]">{timeString} · {sos.status}</p>
+                      <p className="text-xs text-[#A0A0A8]">{sos.status}</p>
                     </div>
                   </div>
 
