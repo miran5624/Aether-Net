@@ -91,6 +91,25 @@ const updateStatus = async (req, res) => {
                     .from('users')
                     .update({ guardians })
                     .eq('id', seekerId);
+                    
+                if (global.io) {
+                    global.io.to(`user:${seekerId}`).emit('guardian:updated');
+                    
+                    const { data: acceptNotif } = await supabase.from('notifications').insert({
+                        user_id: seekerId,
+                        sender_id: guardianId,
+                        type: 'guardian_accepted',
+                        status: 'unread',
+                        data: { message: `${req.user.name} accepted your guardian request` }
+                    }).select().single();
+                    
+                    if (acceptNotif) {
+                        global.io.to(`user:${seekerId}`).emit('notification:new', {
+                            ...acceptNotif,
+                            sender: { id: req.user.id, name: req.user.name, email: req.user.email }
+                        });
+                    }
+                }
             }
         }
 
