@@ -60,12 +60,12 @@ const updateStatus = async (req, res) => {
 
         if (!notification) return res.status(404).json({ message: 'Notification not found' });
 
-        // Update status in notifications table (stored inside 'data' jsonb column)
+        // Update status in notifications table (stored in both column and data)
         const newData = { ...notification.data, status };
         
         const { data: updated, error: updateError } = await supabase
             .from('notifications')
-            .update({ data: newData, is_read: true })
+            .update({ status: status, data: newData, is_read: true })
             .eq('id', id)
             .select()
             .single();

@@ -125,8 +125,10 @@ const getGuardians = async (req, res) => {
             console.log("SAMPLE NOTIFICATION:", pendingNotifs[0]);
         }
 
-        // Filter pending locally in case 'status' column doesn't exist but is packed somewhere else or defaults
-        const pendingList = (pendingNotifs || []).filter(n => n.status === 'pending' || n.data?.status === 'pending' || n.is_read === false);
+        // Filter pending locally and ensure we don't include already accepted guardians
+        const pendingList = (pendingNotifs || [])
+            .filter(n => n.status === 'pending' || n.data?.status === 'pending')
+            .filter(n => !guardianIds.includes(n.user_id));
         
         let pending = [];
         if (pendingList.length > 0) {
