@@ -27,7 +27,7 @@ const submitRating = async (req, res) => {
         // Update trust score and check for one-star ratings
         await updateUserTrustScore(responderId, stars);
         
-        res.status(201).json({ rating });
+        res.status(201).json({ rating: ratingObj });
     } catch (error) {
         console.error('[Ratings] ❌ Error submitting rating:', error);
         res.status(500).json({ message: 'Server error', error: error.message });
@@ -67,7 +67,7 @@ const submitSeekerRating = async (req, res) => {
         // Update seeker's trust score
         await updateUserTrustScore(sos.seeker_id, stars);
         
-        res.status(201).json({ rating });
+        res.status(201).json({ rating: ratingObj });
     } catch (error) {
         console.error('[Ratings] ❌ Error submitting seeker rating:', error);
         res.status(500).json({ message: 'Server error', error: error.message });

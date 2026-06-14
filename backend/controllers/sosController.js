@@ -284,8 +284,7 @@ const getActiveSOS = async (req, res) => {
         const { data: allActive } = await supabase
             .from('sos')
             .select('*, users!seeker_id(name, blood_group, health_conditions, skills)')
-            .eq('status', 'active')
-            .neq('seeker_id', user.id); // Never show own SOS in the feed
+            .in('status', ['active', 'responding']);
 
         const nearbySOS = (allActive || []).filter(sos => {
             if (!sos.lat || !sos.lng) return false;
