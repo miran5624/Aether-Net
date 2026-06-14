@@ -60,13 +60,17 @@ const updateStatus = async (req, res) => {
 
         if (!notification) return res.status(404).json({ message: 'Notification not found' });
 
-        // Update status in notifications table
-        const { data: updated } = await supabase
+        // Update status in notifications table (stored inside 'data' jsonb column)
+        const newData = { ...notification.data, status };
+        
+        const { data: updated, error: updateError } = await supabase
             .from('notifications')
-            .update({ status })
+            .update({ data: newData, is_read: true })
             .eq('id', id)
             .select()
             .single();
+
+        if (updateError) throw updateError;
 
         // Handle logical side effects based on type
         if (status === 'accepted' && notification.type === 'guardian_request') {

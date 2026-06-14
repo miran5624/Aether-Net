@@ -511,20 +511,11 @@ const flagSOS = async (req, res) => {
             const { data: seeker } = await supabase.from('users').select('*').eq('id', sos.seeker_id).single();
             if (seeker) {
                 const newCount = (seeker.false_alert_count || 0) + 1;
-                const suspended = newCount >= 3;
                 await supabase.from('users').update({
-                    false_alert_count: newCount,
-                    is_suspended: suspended ? true : seeker.is_suspended
+                    false_alert_count: newCount
                 }).eq('id', seeker.id);
 
-                if (suspended) {
-                    const io = req.app.get('io');
-                    if (io) {
-                        io.to(`user:${seeker.id}`).emit('account:suspended', { reason: 'Too many false alerts.' });
-                        io.to('admin:room').emit('admin:user_suspended', { userId: seeker.id, name: seeker.name, email: seeker.email });
-                    }
-                }
-                return res.json({ message: 'SOS flagged successfully', seekerSuspended: suspended });
+                return res.json({ message: 'SOS flagged successfully', seekerSuspended: false });
             }
         }
         res.json({ message: 'SOS flagged' });
