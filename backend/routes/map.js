@@ -108,10 +108,14 @@ router.get('/resources', async (req, res) => {
     const response = await fetchWithRetry(overpassQuery, 2);
     const elements = response.data.elements || [];
 
-    // Categorize each result by its OSM tags
+    // Categorize each result by its OSM tags and include static fallback
     const result = {
-      hospitals: [], pharmacies: [], policeStations: [],
-      fireStations: [], fireHydrants: [], aed: []
+      hospitals: [...(pointsOfInterest.hospitals || [])], 
+      pharmacies: [], 
+      policeStations: [...(pointsOfInterest.policeStations || [])],
+      fireStations: [...(pointsOfInterest.fireStations || [])], 
+      fireHydrants: [...(pointsOfInterest.fireHydrants || [])], 
+      aed: [...(pointsOfInterest.aed || [])]
     };
 
     for (const el of elements) {
@@ -145,11 +149,16 @@ router.get('/resources', async (req, res) => {
 
   } catch (error) {
     console.error('[mapRoute] Overpass API error:', error.message);
-    // Return empty arrays — never crash the frontend
-    res.json({
-      hospitals: [], pharmacies: [], policeStations: [],
-      fireStations: [], fireHydrants: [], aed: []
-    });
+    // Return static points of interest as fallback instead of empty arrays
+    const fallback = {
+      hospitals: pointsOfInterest.hospitals || [],
+      pharmacies: [],
+      policeStations: pointsOfInterest.policeStations || [],
+      fireStations: pointsOfInterest.fireStations || [],
+      fireHydrants: pointsOfInterest.fireHydrants || [],
+      aed: pointsOfInterest.aed || []
+    };
+    res.json(fallback);
   }
 });
 
