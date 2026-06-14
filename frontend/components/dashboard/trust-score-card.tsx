@@ -82,11 +82,11 @@ export default function TrustScoreCard() {
                         <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4">
                             <div className="flex items-center gap-2 mb-2">
                                 {[1, 2, 3, 4, 5].map(s => (
-                                    <Star key={s} className={`h-3.5 w-3.5 ${r.stars >= s ? 'fill-yellow-400 text-yellow-400' : 'text-gray-200'}`} />
+                                    <Star key={s} className={`h-3.5 w-3.5 ${r.rating >= s ? 'fill-yellow-400 text-yellow-400' : 'text-gray-200'}`} />
                                 ))}
                                 <span className="text-xs text-gray-400">{new Date(r.created_at).toLocaleDateString('en-IN')}</span>
                             </div>
-                            {r.review && <p className="text-sm text-gray-600">{r.review}</p>}
+                            {r.feedback && <p className="text-sm text-gray-600">{r.feedback}</p>}
                         </div>
                     ))}
                 </div>
