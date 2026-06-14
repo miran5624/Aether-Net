@@ -115,18 +115,22 @@ const getGuardians = async (req, res) => {
 
         const { data: pendingNotifs, error: pendingError } = await supabase
             .from('notifications')
-            .select('user_id, status')
+            .select('*')
             .eq('sender_id', req.user.id)
-            .eq('type', 'guardian_request')
-            .eq('status', 'pending');
+            .eq('type', 'guardian_request');
 
         if (pendingError) {
             console.error("getGuardians pendingNotifs fetch error:", pendingError);
+        } else if (pendingNotifs && pendingNotifs.length > 0) {
+            console.log("SAMPLE NOTIFICATION:", pendingNotifs[0]);
         }
 
+        // Filter pending locally in case 'status' column doesn't exist but is packed somewhere else or defaults
+        const pendingList = (pendingNotifs || []).filter(n => n.status === 'pending' || n.data?.status === 'pending' || n.is_read === false);
+        
         let pending = [];
-        if (pendingNotifs && pendingNotifs.length > 0) {
-            const pendingIds = pendingNotifs.map(n => n.user_id);
+        if (pendingList.length > 0) {
+            const pendingIds = pendingList.map(n => n.user_id);
             const { data: ps, error: psError } = await supabase.from('users').select('id, name, email').in('id', pendingIds);
             if (psError) console.error("getGuardians ps fetch error:", psError);
             pending = ps || [];
