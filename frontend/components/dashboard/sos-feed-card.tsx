@@ -154,8 +154,8 @@ export default function SosFeedCard({ onRespond }: { onRespond?: (sos: any) => v
                     </div>
                   </div>
 
-                  {/* Only show Accept/Decline if current user is NOT the seeker */}
-                  {sos.seeker_id !== user.id && sos.status === 'active' && (
+                  {/* Only show Accept/Decline if current user is NOT the seeker and no one has responded yet */}
+                  {sos.seeker_id !== user.id && sos.status === 'active' && !(sos.responders?.length > 0) && (
                     <div className="flex gap-2 mt-3">
 
                       {/* DECLINE button */}

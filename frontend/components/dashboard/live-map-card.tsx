@@ -80,10 +80,37 @@ export default function LiveMapCard() {
   const [mapCenter, setMapCenter] = useState<[number, number]>([28.6139, 77.2090]); // Default Delhi
   const [isAutoFollow, setIsAutoFollow] = useState(true);
   const [watchId, setWatchId] = useState<number | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const [userLocation, setUserLocation] = useState<{ lat: number, lng: number } | null>(null);
   const [poiCenter, setPoiCenter] = useState<{ lat: number, lng: number } | null>(null);
   const [pois, setPois] = useState<any>({ hospitals: [], fireStations: [], policeStations: [], extinguishers: [] });
+
+  const handleAccept = async (sosId: string) => {
+    try {
+      await api.post(`/sos/${sosId}/presence`, { available: true });
+    } catch (err: any) {
+      if (err.response?.status === 400) {
+        alert(err.response?.data?.message || 'SOS already accepted');
+      } else {
+        console.error('Accept failed:', err);
+      }
+    }
+  };
+
+  const handleFlag = async (sosId: string) => {
+    try {
+      await api.post(`/sos/${sosId}/flag`);
+      setToastMessage("Flagged the SOS and sent to the admin. Necessary actions will be taken against the user.");
+      setTimeout(() => setToastMessage(null), 5000);
+    } catch (err: any) {
+      if (err.response?.status === 403) {
+        alert("Only responders can flag this SOS.");
+      } else {
+        console.error('Flag failed:', err);
+      }
+    }
+  };
 
   const fetchPOIs = async (lat: number, lng: number) => {
     try {
@@ -214,7 +241,9 @@ export default function LiveMapCard() {
           icon: conf.icon,
           label: sos.type,
           status: sos.status,
-          active: true
+          active: true,
+          responders: sos.responders || [],
+          seekerId: sos.seeker_id
         });
       });
       setPins(newPins);
@@ -256,9 +285,16 @@ export default function LiveMapCard() {
   return (
     <div className="flex flex-col h-full rounded-3xl border border-[#E5E5E5] bg-[#FFFFFF] p-4 lg:p-6 text-black">
       {/* Card header */}
-      <div className="mb-4">
-        <h2 className="text-base font-semibold text-black">Live Incident Map</h2>
-        <p className="text-xs text-[#A0A0A8] mt-0.5">5km community radius</p>
+      <div className="mb-4 flex justify-between items-start">
+        <div>
+          <h2 className="text-base font-semibold text-black">Live Incident Map</h2>
+          <p className="text-xs text-[#A0A0A8] mt-0.5">5km community radius</p>
+        </div>
+        {toastMessage && (
+          <div className="bg-green-100 text-green-700 text-xs px-3 py-2 rounded-lg max-w-xs text-right shadow-sm border border-green-200">
+            {toastMessage}
+          </div>
+        )}
       </div>
 
       {/* Map area */}
@@ -309,9 +345,22 @@ export default function LiveMapCard() {
             >
               <Popup>
                 <div className="text-black font-semibold text-sm">{pin.label} Emergency</div>
-                <div className="mt-1 flex gap-2">
-                  <button className="bg-black text-white text-xs px-2 py-1 rounded">Respond</button>
-                  <button className="bg-red-100 text-red-600 text-xs px-2 py-1 rounded">Flag Fake</button>
+                <div className="mt-1 flex flex-col gap-2">
+                  {/* Hide Respond if already accepted or if user is the seeker */}
+                  {pin.responders.length === 0 && pin.seekerId !== user?.id && (
+                    <button 
+                      className="bg-black text-white text-xs px-2 py-1.5 rounded font-medium"
+                      onClick={() => handleAccept(pin.id)}
+                    >
+                      Respond
+                    </button>
+                  )}
+                  <button 
+                    className="bg-red-100 text-red-600 text-xs px-2 py-1.5 rounded font-medium border border-red-200"
+                    onClick={() => handleFlag(pin.id)}
+                  >
+                    Flag as Fake
+                  </button>
                 </div>
               </Popup>
             </CircleMarker>
