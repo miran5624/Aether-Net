@@ -496,7 +496,8 @@ const flagSOS = async (req, res) => {
     try {
         const { data: sos } = await supabase.from('sos').select('*').eq('id', req.params.id).single();
         if (!sos) return res.status(404).json({ message: 'SOS not found' });
-        if (!(sos.responders || []).includes(req.user.id)) return res.status(403).json({ message: 'Only responders can flag' });
+        
+        // Removed responder-only restriction to allow community reporting from the map
 
         const flaggedBy = sos.flagged_by || [];
         if (flaggedBy.includes(req.user.id)) {
@@ -643,6 +644,12 @@ const confirmPresence = async (req, res) => {
 
         // Add responder
         const responders = sos.responders || [];
+        
+        // Ensure only one responder can accept the SOS
+        if (responders.length > 0 && !responders.includes(req.user.id)) {
+            return res.status(400).json({ message: 'This SOS has already been accepted by another responder.' });
+        }
+        
         if (!responders.includes(req.user.id)) responders.push(req.user.id);
 
         const { data: updated } = await supabase.from('sos')
