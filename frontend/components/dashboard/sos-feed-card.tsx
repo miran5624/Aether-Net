@@ -130,7 +130,9 @@ export default function SosFeedCard({ onRespond }: { onRespond?: (sos: any) => v
             if (sos) {
               const conf = typeConfig[sos.type] || typeConfig["General Help"];
               const Icon = conf.icon;
-              const timeString = new Date(sos.created_at || sos.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+              const rawDate = sos.created_at || sos.createdAt;
+              const dateObj = new Date(rawDate.endsWith('Z') || rawDate.includes('+') ? rawDate : rawDate + 'Z');
+              const timeString = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
               return (
                 <motion.li
