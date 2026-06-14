@@ -4,7 +4,7 @@ const supabase = require('../config/supabase');
 const getLiveMapData = async (req, res) => {
     try {
         const { data: activeSOS } = await supabase.from('sos')
-            .select('id, type, status, lat, lng, seeker_id, responders, created_at, users!sos_seeker_id_fkey(name)')
+            .select('id, type, status, lat, lng, seeker_id, responders, created_at, users!seeker_id(name)')
             .in('status', ['active', 'responding']);
         const { data: onlineUsers } = await supabase.from('users')
             .select('id, name, lat, lng, skills, is_online').eq('is_online', true);
@@ -199,7 +199,7 @@ const verifySkill = async (req, res) => {
 const getWelfareChecks = async (req, res) => {
     try {
         const { data: checks } = await supabase.from('welfare_checks')
-            .select('*, users!welfare_checks_user_id_fkey(name, email), sos!welfare_checks_sos_id_fkey(type)')
+            .select('*, users!user_id(name, email), sos!sos_id(type)')
             .eq('sent', true).order('scheduled_for', { ascending: false });
         res.json(checks || []);
     } catch (error) {

@@ -17,11 +17,11 @@ const submitRating = async (req, res) => {
         if (!(sos.responders || []).includes(responderId)) return res.status(400).json({ message: 'User was not a responder for this SOS' });
 
         const { data: existing } = await supabase.from('ratings')
-            .select('id').eq('sos_id', sosId).eq('seeker_id', req.user.id).eq('responder_id', responderId).single();
+            .select('id').eq('sos_id', sosId).eq('rater_id', req.user.id).eq('ratee_id', responderId).single();
         if (existing) return res.status(400).json({ message: 'You have already rated this responder for this SOS' });
 
-        const { data: rating } = await supabase.from('ratings').insert({
-            sos_id: sosId, seeker_id: req.user.id, responder_id: responderId, stars, review
+        const { data: ratingObj } = await supabase.from('ratings').insert({
+            sos_id: sosId, rater_id: req.user.id, ratee_id: responderId, rating: stars, feedback: review
         }).select().single();
 
         // Update trust score and check for one-star ratings
@@ -53,15 +53,15 @@ const submitSeekerRating = async (req, res) => {
 
         // Check if responder already rated this seeker
         const { data: existing } = await supabase.from('ratings')
-            .select('id').eq('sos_id', sosId).eq('responder_id', req.user.id).eq('seeker_id', sos.seeker_id).single();
+            .select('id').eq('sos_id', sosId).eq('rater_id', req.user.id).eq('ratee_id', sos.seeker_id).single();
         if (existing) return res.status(400).json({ message: 'You have already rated the seeker for this SOS' });
 
-        const { data: rating } = await supabase.from('ratings').insert({
+        const { data: ratingObj } = await supabase.from('ratings').insert({
             sos_id: sosId,
-            responder_id: req.user.id,
-            seeker_id: sos.seeker_id,
-            stars,
-            review
+            rater_id: req.user.id,
+            ratee_id: sos.seeker_id,
+            rating: stars,
+            feedback: review
         }).select().single();
 
         // Update seeker's trust score
@@ -94,8 +94,8 @@ async function updateUserTrustScore(userId, stars) {
         // Count one-star ratings dynamically instead of relying on a potentially missing column
         const { count: oneStarCount, error: countError } = await supabase.from('ratings')
             .select('*', { count: 'exact', head: true })
-            .eq('responder_id', userId)
-            .eq('stars', 1);
+            .eq('ratee_id', userId)
+            .eq('rating', 1);
 
         if (countError) {
             console.error('[Ratings] ❌ Error counting one-star ratings:', countError);
@@ -130,12 +130,12 @@ async function updateUserTrustScore(userId, stars) {
 const getResponderRatings = async (req, res) => {
     try {
         const { data: ratings } = await supabase.from('ratings')
-            .select('*, sos!ratings_sos_id_fkey(type), users!ratings_seeker_id_fkey(name)')
-            .eq('responder_id', req.params.userId)
+            .select('*, sos!sos_id(type), rater:users!rater_id(name)')
+            .eq('ratee_id', req.params.userId)
             .order('created_at', { ascending: false });
 
         const { data: user } = await supabase.from('users')
-            .select('trust_score, total_ratings, one_star_count')
+            .select('trust_score, total_ratings')
             .eq('id', req.params.userId)
             .single();
         
@@ -145,7 +145,7 @@ const getResponderRatings = async (req, res) => {
             ratings: ratings || [], 
             averageScore: user.trust_score, 
             totalCount: user.total_ratings,
-            oneStarCount: user.one_star_count || 0
+            oneStarCount: 0
         });
     } catch (error) {
         res.status(500).json({ message: 'Server error', error: error.message });
@@ -156,20 +156,20 @@ const getResponderRatings = async (req, res) => {
 // Get all ratings for a user (both as responder and seeker)
 const getUserRatings = async (req, res) => {
     try {
-        // Get ratings where user was responder
+        // Get ratings where user was responder (ratee)
         const { data: asResponder } = await supabase.from('ratings')
-            .select('*, sos!ratings_sos_id_fkey(type), users!ratings_seeker_id_fkey(name)')
-            .eq('responder_id', req.params.userId)
+            .select('*, sos!sos_id(type), rater:users!rater_id(name)')
+            .eq('ratee_id', req.params.userId)
             .order('created_at', { ascending: false });
 
-        // Get ratings where user was seeker
+        // Get ratings where user was seeker (rater)
         const { data: asSeeker } = await supabase.from('ratings')
-            .select('*, sos!ratings_sos_id_fkey(type), users!ratings_responder_id_fkey(name)')
-            .eq('seeker_id', req.params.userId)
+            .select('*, sos!sos_id(type), ratee:users!ratee_id(name)')
+            .eq('rater_id', req.params.userId)
             .order('created_at', { ascending: false });
 
         const { data: user } = await supabase.from('users')
-            .select('trust_score, total_ratings, one_star_count, is_suspended')
+            .select('trust_score, total_ratings, is_suspended')
             .eq('id', req.params.userId)
             .single();
         
@@ -180,7 +180,7 @@ const getUserRatings = async (req, res) => {
             ratingsGiven: asSeeker || [],
             averageScore: user.trust_score, 
             totalCount: user.total_ratings,
-            oneStarCount: user.one_star_count || 0,
+            oneStarCount: 0,
             isSuspended: user.is_suspended
         });
     } catch (error) {

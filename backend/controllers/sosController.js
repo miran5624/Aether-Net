@@ -283,7 +283,7 @@ const getActiveSOS = async (req, res) => {
 
         const { data: allActive } = await supabase
             .from('sos')
-            .select('*, users!sos_seeker_id_fkey(name, blood_group, health_conditions, skills)')
+            .select('*, users!seeker_id(name, blood_group, health_conditions, skills)')
             .eq('status', 'active')
             .neq('seeker_id', user.id); // Never show own SOS in the feed
 
@@ -365,7 +365,7 @@ const getSOSById = async (req, res) => {
     try {
         const { data: sos } = await supabase
             .from('sos')
-            .select('*, users!sos_seeker_id_fkey(name, email, phone, blood_group, health_conditions, skills)')
+            .select('*, users!seeker_id(name, email, phone, blood_group, health_conditions, skills)')
             .eq('id', req.params.id)
             .single();
         if (!sos) return res.status(404).json({ message: 'SOS not found' });
@@ -538,7 +538,7 @@ const getSOSHistory = async (req, res) => {
     try {
         const { data: history } = await supabase
             .from('sos')
-            .select('*, users!sos_seeker_id_fkey(name)')
+            .select('*, users!seeker_id(name)')
             .or(`seeker_id.eq.${req.user.id},responders.cs.{${req.user.id}}`)
             .order('created_at', { ascending: false })
             .limit(20);

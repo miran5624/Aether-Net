@@ -20,7 +20,7 @@ module.exports = (io, socket) => {
 
             // Get current SOS data
             const { data: sos, error: fetchError } = await supabase.from('sos')
-                .select('*, users!sos_seeker_id_fkey(name)')
+                .select('*, users!seeker_id(name)')
                 .eq('id', sosId).single();
 
             if (fetchError || !sos) {
