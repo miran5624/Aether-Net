@@ -99,12 +99,43 @@ const updateLocation = async (req, res) => {
 // @route GET /api/users/guardians
 const getGuardians = async (req, res) => {
     try {
-        const { data: user } = await supabase.from('users').select('guardians').eq('id', req.user.id).single();
-        if (!user?.guardians?.length) return res.json([]);
-        const { data: gs } = await supabase.from('users').select('id, name, email, phone').in('id', user.guardians);
-        res.json(gs || []);
+        const { data: user, error: userError } = await supabase.from('users').select('guardians').eq('id', req.user.id).single();
+        if (userError && userError.code !== 'PGRST116') {
+            console.error("getGuardians user fetch error:", userError);
+            throw userError;
+        }
+        
+        const guardianIds = user?.guardians || [];
+        let accepted = [];
+        if (guardianIds.length > 0) {
+            const { data: gs, error: gsError } = await supabase.from('users').select('id, name, email, phone').in('id', guardianIds);
+            if (gsError) console.error("getGuardians gs fetch error:", gsError);
+            accepted = gs || [];
+        }
+
+        const { data: pendingNotifs, error: pendingError } = await supabase
+            .from('notifications')
+            .select('user_id, status')
+            .eq('sender_id', req.user.id)
+            .eq('type', 'guardian_request')
+            .eq('status', 'pending');
+
+        if (pendingError) {
+            console.error("getGuardians pendingNotifs fetch error:", pendingError);
+        }
+
+        let pending = [];
+        if (pendingNotifs && pendingNotifs.length > 0) {
+            const pendingIds = pendingNotifs.map(n => n.user_id);
+            const { data: ps, error: psError } = await supabase.from('users').select('id, name, email').in('id', pendingIds);
+            if (psError) console.error("getGuardians ps fetch error:", psError);
+            pending = ps || [];
+        }
+
+        res.json({ accepted, pending });
     } catch (error) {
-        res.status(500).json({ message: 'Server error' });
+        console.error("getGuardians unhandled error:", error);
+        res.status(500).json({ message: 'Server error', details: error.message });
     }
 };
 

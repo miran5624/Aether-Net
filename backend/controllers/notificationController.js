@@ -24,7 +24,7 @@ const getNotifications = async (req, res) => {
         if (error) {
             console.error("[getNotifications] Supabase query error:", error);
             // Fallback if the join fails (sometimes relationships aren't detected)
-            if (error.message.includes('relationship') || error.code === 'PGRST201') {
+            if (error.message.includes('relationship') || ['PGRST200', 'PGRST201'].includes(error.code)) {
                 const { data: simpleNotifs, error: simpleError } = await supabase
                     .from('notifications')
                     .select('*')
