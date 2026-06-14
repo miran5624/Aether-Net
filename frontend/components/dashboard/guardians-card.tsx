@@ -33,6 +33,7 @@ export default function GuardiansCard() {
     };
 
     useEffect(() => { 
+        if (!user) return;
         fetchGuardians(); 
         const socket = getSocket();
         if (socket) {
@@ -41,7 +42,7 @@ export default function GuardiansCard() {
                 socket.off('guardian:updated', fetchGuardians);
             };
         }
-    }, []);
+    }, [user]);
 
     const addGuardian = async (e: React.FormEvent) => {
         e.preventDefault();

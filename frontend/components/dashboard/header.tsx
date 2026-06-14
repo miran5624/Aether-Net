@@ -18,6 +18,8 @@ export default function DashboardHeader({ onMenuClick, onRespond }: { onMenuClic
   const unreadCount = notifications.filter(n => n.status === 'pending' || n.status === 'unread').length;
 
   useEffect(() => {
+    if (!user) return;
+
     const fetchNotifications = async () => {
       try {
         const { data } = await api.get('/notifications');
@@ -30,13 +32,24 @@ export default function DashboardHeader({ onMenuClick, onRespond }: { onMenuClic
     fetchNotifications();
 
     const socket = getSocket();
+    let onNewNotif: any;
+
     if (socket) {
-      socket.on('notification:new', (notif: any) => {
+      onNewNotif = (notif: any) => {
         setNotifications(prev => [notif, ...prev]);
         // Visual ping/sound could go here
-      });
+      };
+      socket.on('notification:new', onNewNotif);
     }
 
+    return () => {
+      if (socket && onNewNotif) {
+        socket.off('notification:new', onNewNotif);
+      }
+    };
+  }, [user]);
+
+  useEffect(() => {
     // Close dropdown on click outside
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -46,7 +59,6 @@ export default function DashboardHeader({ onMenuClick, onRespond }: { onMenuClic
     document.addEventListener("mousedown", handleClickOutside);
 
     return () => {
-      if (socket) socket.off('notification:new');
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, []);
@@ -150,12 +162,12 @@ export default function DashboardHeader({ onMenuClick, onRespond }: { onMenuClic
                         {notifications.map((notif) => (
                           <div key={notif.id} className={`p-4 transition-colors ${notif.status === 'pending' ? 'bg-[#FF3B30]/5' : 'hover:bg-gray-50'}`}>
                             <div className="flex items-start gap-3">
-                              <div className={`mt-1 p-2 rounded-lg shrink-0 ${notif.type === 'guardian_request' ? 'bg-indigo-100 text-indigo-600' : 'bg-red-100 text-red-600'}`}>
-                                {notif.type === 'guardian_request' ? <Shield className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                              <div className={`mt-1 p-2 rounded-lg shrink-0 ${notif.type.startsWith('guardian_') ? 'bg-indigo-100 text-indigo-600' : 'bg-red-100 text-red-600'}`}>
+                                {notif.type.startsWith('guardian_') ? <Shield className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
                               </div>
                               <div className="flex-1 min-w-0">
                                 <p className="text-xs font-bold text-[#161618] mb-0.5">
-                                  {notif.type === 'guardian_request' ? 'Guardian Request' : 'Emergency Alert'}
+                                  {notif.type === 'guardian_request' ? 'Guardian Request' : notif.type === 'guardian_accepted' ? 'Guardian Accepted' : 'Emergency Alert'}
                                 </p>
                                 <p className="text-[13px] text-gray-600 leading-snug break-words">
                                   {notif.type === 'guardian_request'
