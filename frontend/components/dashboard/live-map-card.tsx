@@ -347,7 +347,7 @@ export default function LiveMapCard() {
                 <div className="text-black font-semibold text-sm">{pin.label} Emergency</div>
                 <div className="mt-1 flex flex-col gap-2">
                   {/* Hide Respond if already accepted or if user is the seeker */}
-                  {pin.responders.length === 0 && pin.seekerId !== user?.id && (
+                  {(!pin.responders || pin.responders.length === 0) && pin.seekerId !== user?.id && (
                     <button 
                       className="bg-black text-white text-xs px-2 py-1.5 rounded font-medium"
                       onClick={() => handleAccept(pin.id)}
