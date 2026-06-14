@@ -187,7 +187,8 @@ const addGuardian = async (req, res) => {
 
         res.json({ message: 'Guardian request sent', notification });
     } catch (error) {
-        res.status(500).json({ message: 'Server error' });
+        console.error("addGuardian unhandled error:", error);
+        res.status(500).json({ message: 'Server error', details: error.message || error });
     }
 };
 
