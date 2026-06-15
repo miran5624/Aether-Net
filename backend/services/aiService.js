@@ -8,6 +8,7 @@
 
 // Initialize using process.env.GEMINI_API_KEY
 const apiKey = process.env.GEMINI_API_KEY;
+const { getEmergencyLocation } = require('../utils/geocoding');
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
