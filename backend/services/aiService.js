@@ -49,7 +49,7 @@ async function callGemini(prompt) {
     const models = [
         'gemini-2.5-flash',   // Primary — fastest, most capable
         'gemini-2.0-flash',   // Fallback — stable
-        'gemini-1.5-flash',   // Last resort — always available
+        'gemini-2.5-pro',     // Last resort — always available
     ];
 
     for (const modelName of models) {
