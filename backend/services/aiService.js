@@ -6,11 +6,8 @@
 //        improved logging and fallback chain.
 // ============================================================
 
-const { GoogleGenAI } = require('@google/genai');
-const { getEmergencyLocation } = require('../utils/geocoding');
-
-// Initialize the SDK using process.env.GEMINI_API_KEY automatically
-const ai = new GoogleGenAI({});
+// Initialize using process.env.GEMINI_API_KEY
+const apiKey = process.env.GEMINI_API_KEY;
 
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -43,9 +40,9 @@ function stripMarkdown(text) {
 }
 
 // ─── GEMINI API CORE HELPER ──────────────────────────────────
-async function callGemini(prompt) {
-    // Valid model chain — gemini-3.5-flash does NOT exist, removed to avoid
-    // wasting a round-trip 503 on every single call.
+async function callGemini(prompt, maxRetries = 2) {
+    if (!apiKey) throw new Error('GEMINI_API_KEY is not configured.');
+
     const models = [
         'gemini-2.5-flash',   // Primary — fastest, most capable
         'gemini-2.0-flash',   // Fallback — stable
@@ -53,68 +50,63 @@ async function callGemini(prompt) {
     ];
 
     for (const modelName of models) {
-        try {
-            const response = await ai.models.generateContent({
-                model: modelName,
-                contents: prompt,
-                config: {
-                    temperature: 0.3,
-                    maxOutputTokens: 1024, // Increased from 512 to prevent truncation
-                },
-            });
-
-            const text = response.text;
-            if (text && text.trim().length > 0) {
-                // Strip markdown formatting from AI response
-                const cleanText = stripMarkdown(text.trim());
-                console.log(`[aiService] ✅ Gemini response generated using model: ${modelName}`);
-                return cleanText;
-            }
-
-            // Empty response — try next model
-            console.warn(`[aiService] ⚠️ ${modelName} returned empty response, trying next...`);
-
-        } catch (err) {
-            const rawMessage = err.message || JSON.stringify(err);
-
-            // Attempt to parse the nested JSON error Gemini SDK wraps errors in
-            let code = null;
+        let attempts = 0;
+        while (attempts <= maxRetries) {
             try {
-                const parsed = JSON.parse(rawMessage);
-                code = parsed?.error?.code;
-            } catch {
-                // Not JSON — leave code as null
-            }
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                        generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
+                    }),
+                });
 
-            // ── Truly global errors: same API key is used for all models,
-            //    so these will fail identically on every model. Short-circuit immediately.
-            if (code === 400) {
-                console.error(`[aiService] ❌ Bad request (400) — check prompt format: ${rawMessage}`);
-                throw new Error(`Gemini bad request: ${rawMessage}`);
-            }
-            if (code === 401 || code === 403) {
-                console.error(`[aiService] ❌ Auth/permission error (${code}) — check GEMINI_API_KEY: ${rawMessage}`);
-                throw new Error(`Gemini auth error ${code}: ${rawMessage}`);
-            }
+                if (res.ok) {
+                    const data = await res.json();
+                    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text && text.trim().length > 0) {
+                        const cleanText = stripMarkdown(text.trim());
+                        console.log(`[aiService] ✅ Gemini response generated using model: ${modelName}`);
+                        return cleanText;
+                    }
+                    console.warn(`[aiService] ⚠️ ${modelName} returned empty response.`);
+                    break; // Move to next model
+                }
 
-            // ── Per-model errors: 429 quota and 503 overload are scoped to a specific
-            //    model. Each model has its own separate free-tier quota bucket, so
-            //    falling through to the next model is exactly the right move.
-            if (code === 429) {
-                console.warn(`[aiService] ⚠️ ${modelName} quota exhausted (429), waiting before trying next model...`);
-                const delayMs = 1000 * Math.pow(2, models.indexOf(modelName));
-                await delay(delayMs);
-            } else if (code === 503) {
-                console.warn(`[aiService] ⚠️ ${modelName} overloaded (503), waiting before trying next model...`);
-                const delayMs = 1000 * Math.pow(2, models.indexOf(modelName));
-                await delay(delayMs);
-            } else {
-                console.warn(`[aiService] ⚠️ ${modelName} failed (code: ${code ?? 'unknown'}), trying next model. Reason: ${rawMessage}`);
+                if (res.status === 400) {
+                    throw new Error(`Gemini bad request: ${await res.text()}`);
+                }
+                if (res.status === 401 || res.status === 403) {
+                    throw new Error(`Gemini auth error ${res.status}: check API key`);
+                }
+
+                if (res.status === 429 || res.status === 503) {
+                    attempts++;
+                    if (attempts <= maxRetries) {
+                        const delayMs = 1500 * Math.pow(2, attempts); // 3s, 6s
+                        console.warn(`[aiService] ⚠️ ${modelName} hit ${res.status}. Retrying in ${delayMs}ms (Attempt ${attempts})...`);
+                        await delay(delayMs);
+                        continue;
+                    } else {
+                        console.warn(`[aiService] ⚠️ ${modelName} exhausted retries for ${res.status}. Trying next model...`);
+                        break; // Exhausted retries, move to next model
+                    }
+                }
+                
+                // Other errors
+                const errText = await res.text();
+                console.warn(`[aiService] ⚠️ ${modelName} failed (${res.status}): ${errText}`);
+                break; // Move to next model
+
+            } catch (err) {
+                console.warn(`[aiService] ⚠️ ${modelName} network/fetch error: ${err.message}`);
+                break; // Move to next model
             }
         }
     }
 
-    // All models exhausted
     throw new Error('All Gemini models failed. Unable to generate AI response. Please contact emergency services immediately at 112.');
 }
 
