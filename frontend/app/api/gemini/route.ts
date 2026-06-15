@@ -90,12 +90,12 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        // Try next API key
+        // Try next model if this one is exhausted, since quotas are often per-model
         if (
           response.status === 429 ||
           data?.error?.status === "RESOURCE_EXHAUSTED"
         ) {
-          break;
+          continue;
         }
       } catch (error) {
         console.error(
@@ -135,7 +135,13 @@ function getUserMessage(body: any): string {
         const parts = content.parts || [];
         for (const part of parts) {
           if (typeof part.text === 'string' && part.text.trim()) {
-            return part.text.trim();
+            const text = part.text.trim();
+            // Try to extract just the user's message from the prompt wrapper
+            const match = text.match(/The user is asking:\s*"([^"]+)"/);
+            if (match && match[1]) {
+              return match[1].trim();
+            }
+            return text;
           }
         }
       }
