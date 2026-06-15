@@ -8,7 +8,7 @@ A real-time, community-driven emergency coordination platform that connects peop
 
 ![Platform](https://img.shields.io/badge/Platform-Web%20%7C%20Android-0f172a?style=for-the-badge)
 ![Stack](https://img.shields.io/badge/Stack-Next.js%20%7C%20Express%20%7C%20React%20Native-6366f1?style=for-the-badge)
-![AI](https://img.shields.io/badge/AI-Gemini%20%7C%20Claude-10b981?style=for-the-badge)
+![AI](https://img.shields.io/badge/AI-Gemini%20%7C%20-10b981?style=for-the-badge)
 ![Realtime](https://img.shields.io/badge/Realtime-Socket.IO-f59e0b?style=for-the-badge)
 ![Database](https://img.shields.io/badge/Database-Supabase%20PostgreSQL-3ecf8e?style=for-the-badge)
 
@@ -225,7 +225,6 @@ AetherNet's **Online Mode** provides a full-featured, server-backed emergency re
 - **Gemini AI First-Response Guidance**: Generates numbered action checklists based on SOS type
 - **Emergency Call Script Generator**: Auto-creates formal scripts for calling emergency services (112, 100)
 - **In-Dashboard AI Assistant**: General-purpose AI chatbot for emergency questions
-- **Claude Fallback**: Anthropic Claude ensures AI availability when Gemini is down
 
 #### Database-Backed User Management
 - **Profile System**: Skills registry, health profile (blood group, conditions), location history
