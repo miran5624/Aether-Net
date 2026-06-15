@@ -541,8 +541,8 @@ The API server runs on `http://localhost:5002`.
 
 ```bash
 cd frontend
-pnpm install
-pnpm dev
+npm install
+npm run dev
 ```
 
 The web dashboard runs on `http://localhost:3000`.
