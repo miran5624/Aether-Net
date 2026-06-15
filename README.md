@@ -20,6 +20,10 @@ A real-time, community-driven emergency coordination platform that connects peop
 
 - [Overview](#overview)
 - [Features](#features)
+  - [Online Mode Features](#online-mode-features-internet-required)
+  - [Offline Mode Features](#offline-mode-features-zero-internet-required)
+  - [Hybrid Mode Features](#hybrid-mode-features)
+  - [Mode Switching Guide](#mode-switching-guide)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Environment Variables](#environment-variables)
@@ -38,16 +42,21 @@ A real-time, community-driven emergency coordination platform that connects peop
 
 | Capability | AetherNet | Typical Emergency Apps |
 |---|---|---|
-| Anonymous SOS (no signup) | ✅ | ❌ |
-| AI first-response guidance | ✅ Gemini | ❌ |
-| Skill-based responder routing | ✅ | ❌ |
-| Live mutual GPS tracking | ✅ Seeker + Responder | ❌ |
-| Guardian pre-alerts | ✅ | ❌ |
-| Cross-platform (Web + Android) | ✅ | Rare |
-| False-alert abuse prevention | ✅ Auto-suspension | ❌ |
-| 24h post-crisis welfare check | ✅ | ❌ |
+| Anonymous SOS (no signup) | ✓ | ✗ |
+| AI first-response guidance | ✓ Gemini | ✗ |
+| Skill-based responder routing | ✓ | ✗ |
+| Live mutual GPS tracking | ✓ Seeker + Responder | ✗ |
+| Guardian pre-alerts | ✓ | ✗ |
+| Cross-platform (Web + Android) | ✓ | Rare |
+| False-alert abuse prevention | ✓ Auto-suspension | ✗ |
+| 24h post-crisis welfare check | ✓ | ✗ |
+| **Offline mesh networking** | ✓ P2P via Bluetooth/WiFi Direct | ✗ |
+| **Offline maps** | ✓ Pre-downloaded OSM tiles | ✗ |
+| **Zero-infrastructure operation** | ✓ Works without servers/internet | ✗ |
 
 ### Core Platform Flow
+
+#### [ONLINE] Online Mode Flow
 ```
 User in Crisis
     │
@@ -71,72 +80,292 @@ Raise SOS (typed + contextual details)
                   SOS Resolved → Rating → Welfare Check (24h)
 ```
 
+#### [OFFLINE] Offline Mode Flow (Mesh Network)
+```
+[Preparation Phase - While Online]
+    │
+    ▼
+App detects WiFi → Auto-downloads map tiles (50km + 5km radius)
+    │
+    └─→ Maps cached in AsyncStorage → [READY] Ready for offline use
+
+────────────────────────────────────────────────────────────────
+
+[Offline Operation - No Internet Required]
+    │
+    ▼
+Device A: Mesh starts → Bluetooth + WiFi Direct advertising
+    │
+    ├─→ Discovery: Finds Device B, C, D within ~100m range
+    │
+    └─→ Connection: Auto-connects using P2P_CLUSTER strategy
+              │
+              ▼
+         Mesh Network Formed
+         (A ←→ B ←→ C ←→ D)
+              │
+              ▼
+    User in Crisis (Device A)
+              │
+              ▼
+    Raise SOS Offline
+              │
+              ├─→ SOS Packet created with:
+              │     • Unique packetId
+              │     • GPS coordinates
+              │     • Emergency type
+              │     • Device UUID (origin)
+              │     • hopCount: 1
+              │
+              └─→ Saved to local AsyncStorage
+                        │
+                        ▼
+              Epidemic Routing Activated
+                        │
+              ┌─────────┴──────────┐
+              ▼                    ▼
+         Device B             Device C
+         receives packet      receives packet
+              │                    │
+              ├─→ Duplicate check (packetId)
+              ├─→ Save to local storage
+              ├─→ Display in SOS feed
+              └─→ Relay to connected peers
+                  (hopCount: 2)
+                        │
+                        ▼
+                   Device D, E, F...
+                   (up to 200 hops)
+                        │
+                        ▼
+         ┌──────────────┴───────────────┐
+         ▼                              ▼
+    Responder sees SOS           Another device relays
+    on offline map               to even more peers
+         │
+         ▼
+    Tap SOS → Opens Navigation
+         │
+         ├─→ Offline map displays route
+         ├─→ Compass arrow points to target
+         ├─→ Distance updates in real-time
+         └─→ Vibration alert at <50m
+                   │
+                   ▼
+         Responder arrives at location
+                   │
+                   ▼
+         [Physical Assistance Provided]
+                   │
+                   ▼
+    Seeker cancels SOS (Delete button)
+                   │
+                   ▼
+         Tombstone Packet Generated
+         { __delete__: true, packetId, hopCount: 1 }
+                   │
+                   ▼
+         Epidemic Delete Propagation
+                   │
+         ┌─────────┴──────────┐
+         ▼                    ▼
+    Device B             Device C
+    receives tombstone   receives tombstone
+         │                    │
+         ├─→ Add packetId to blocklist
+         ├─→ Delete from local storage
+         ├─→ Remove from SOS feed
+         └─→ Forward tombstone to peers
+             (prevents zombie packets)
+                   │
+                   ▼
+         All devices purge the SOS
+         within seconds via mesh
+```
+
+**Key Differences:**
+- ✗ No central server, no database, no authentication
+- ✓ 100% peer-to-peer using Bluetooth/WiFi Direct  
+- ✓ GPS works offline (satellites don't need internet)
+- ✓ Offline maps must be pre-downloaded on WiFi
+- ✓ Embedded AI protocols (no API calls)
+- ✓ Packets spread virally across mesh (epidemic routing)
+- ✓ Range: ~100m per hop, unlimited hops (max 200)
+- ✓ Works in disasters, remote areas, network blackouts
+
 ---
 
 ## Features
 
-### SOS System
-| Feature | Description |
-|---|---|
-| **Typed SOS** | 6 emergency categories: Medical, Car Problem, Fire, Gas Leak, Threat, General Help |
-| **Dynamic Modals** | Context-specific detail collection per SOS type (blood group auto-fill for Medical, car details for Car Problem, etc.) |
-| **Anonymous SOS** | No account needed — raises SOS with a temporary session, full chat & map included |
-| **Smart Routing** | 5km radius broadcast with skill-based priority routing (e.g. Medical SOS pings users with `Medical` skill first) |
-| **Guardian Alerts** | Instantly notifies pre-assigned guardian contacts before broadcasting to the community |
-| **Accept / Decline** | Responders see Accept/Decline buttons. Accepting opens the mutual live session |
-| **False Alert Flag** | Responders can flag fake SOS. Users with 3+ flags are automatically suspended |
+### [ONLINE] Online Mode Features (Internet Required)
 
-### Live Mutual Response View
-| Feature | Description |
-|---|---|
-| **Real-time Map** | Leaflet-based map (web) / Google Maps (mobile) showing seeker (red) and responder (blue) positions updating live |
-| **Distance & ETA** | Haversine formula calculates real-time distance and estimated arrival time |
-| **Live Chat** | Socket.IO encrypted chat room opens between both parties immediately on acceptance |
-| **Typing Indicators** | Shows live "X is typing..." status in chat |
-| **Resolve & Rate** | Seeker marks as resolved → prompts 5-star rating for the responder |
-| **Auto-close** | View auto-closes 3 seconds after resolution for both parties |
+AetherNet's **Online Mode** provides a full-featured, server-backed emergency response platform with real-time coordination, AI assistance, and persistent data management.
 
-### AI Crisis Assistant
-| Feature | Description |
-|---|---|
-| **First-Response Guidance** | Gemini AI generates a numbered action checklist for the seeker based on their SOS type |
-| **Emergency Call Script** | Auto-generates a formal script to read to emergency services (112, 100) with a one-tap copy button |
-| **AI Chat (Dashboard)** | In-app AI assistant accessible for general questions |
-| **Claude Fallback** | Anthropic Claude serves as an AI fallback model if Gemini is unavailable |
+#### Real-time SOS Broadcasting
+- **5km Geographic Targeting**: Uses Haversine distance calculation to notify nearby community members
+- **Skill-Based Priority Routing**: Medical emergencies ping users with medical skills first
+- **Guardian Instant Alerts**: Pre-assigned contacts receive immediate notifications
+- **Anonymous SOS**: No account needed — raise an SOS with a temporary session
+- **Accept/Decline System**: Responders see Accept/Decline buttons before committing
+- **Response Time Tracking**: Calculates and displays real-time ETA to seeker
 
-### Mobile Application (Android)
-| Feature | Description |
-|---|---|
-| **React Native** | Native Android app sharing the same backend and socket infrastructure |
-| **Google Maps Integration** | Full GPS tracking with native Maps SDK for precise location and rendering |
-| **One-tap SOS** | Streamlined mobile UI for raising an SOS in seconds from a phone |
-| **Push Notifications** | Responder alerts delivered natively on Android even when app is backgrounded |
-| **Shared Auth** | Same JWT-based authentication as the web platform — one account, both platforms |
+#### Live GPS Tracking & Mutual Maps
+- **Bidirectional Location Sharing**: Both seeker and responder see each other's positions in real-time
+- **Socket.IO-Based Updates**: Sub-second location refresh for accurate tracking
+- **Live Distance Calculation**: Haversine formula provides real-time distance between parties
+- **Mutual Tracking Session**: Opens automatically when responder accepts the SOS
 
-###  User Profiles & Skills
-| Feature | Description |
-|---|---|
-| **Skill Registry** | Users declare professional skills (Medical, Car Diagnosis, etc.) used for priority routing |
-| **Health Profile** | Blood group + health conditions stored for medical emergencies |
-| **Guardian Management** | Add/remove trusted contacts who get instant SOS alerts |
-| **Trust Score** | Responders earn trust points for helping; seekers lose points for false alerts |
-| **Responder History** | Full log of past SOS responses with timestamps and status |
+#### Encrypted Real-time Chat
+- **Instant Messaging**: Socket.IO-powered chat room opens between seeker and responder
+- **Typing Indicators**: Shows live "X is typing..." status
+- **Message Persistence**: Chat logs stored in database for accountability
+- **Chat History**: Access past conversations for resolved incidents
 
-###  Live Dashboards
-| Feature | Description |
-|---|---|
-| **Today's Activity Stats** | Live-updating counters: Total SOS, Resolved Today, Avg Response Time |
-| **Admin Dashboard** | God-eye view with: all active SOS alerts, online user count, analytics by category |
-| **Live Map Card** | Shows all active SOS pins and online responders on a real-time map |
-| **User Suspension** | Admins can manually suspend users; automatic suspension on repeated false alerts |
-| **Welfare Check** | Background job sends a post-resolution check message 24 hours after an incident |
+#### AI-Powered Emergency Assistance
+- **Gemini AI First-Response Guidance**: Generates numbered action checklists based on SOS type
+- **Emergency Call Script Generator**: Auto-creates formal scripts for calling emergency services (112, 100)
+- **In-Dashboard AI Assistant**: General-purpose AI chatbot for emergency questions
+- **Claude Fallback**: Anthropic Claude ensures AI availability when Gemini is down
 
-###  Notifications
-| Feature | Description |
-|---|---|
-| **Real-time Alerts** | Priority and standard SOS alerts pushed via WebSocket |
-| **Persistent Notifications** | Stored in database, shown in notification drawer with mark-all-as-read |
-| **Guardian Notifications** | Separate alert pathway for assigned guardian contacts |
+#### Database-Backed User Management
+- **Profile System**: Skills registry, health profile (blood group, conditions), location history
+- **Trust Scoring**: Responders earn points for helping; seekers lose points for false alerts
+- **Response History**: Complete audit trail of all past SOS interactions
+- **Guardian Management**: Add/remove trusted contacts for instant SOS alerts
+- **Auto-Suspension**: Users with 3+ false alert flags are automatically suspended
+
+#### Admin & Analytics Dashboard
+- **Live Platform Statistics**: Total SOS, resolved today, average response time
+- **Active SOS Monitoring**: God-eye view of all ongoing emergencies with map visualization
+- **Online User Tracking**: See which community members are currently available
+- **User Suspension Management**: Manual suspension powers for admins
+- **Welfare Check System**: Automated 24-hour post-crisis follow-up messages
+
+#### Notifications & Alerts
+- **Priority Alerts**: Skill-matched SOS notifications pushed with high priority
+- **Persistent Notifications**: All alerts stored in database, accessible in notification drawer
+- **Guardian Pathway**: Separate alert channel for assigned guardian contacts
+- **Mark-All-As-Read**: Batch notification management
+
+---
+
+### [OFFLINE] Offline Mode Features (Zero Internet Required)
+
+AetherNet's **Offline Mode** transforms the mobile app into a **fully decentralized mesh network** using Bluetooth and WiFi Direct, enabling emergency response even when internet infrastructure is unavailable (natural disasters, remote areas, network outages).
+
+> **[KEY REQUIREMENT]**: While offline mode operates without internet, **maps must be downloaded beforehand while connected to WiFi**. The app auto-downloads tiles for your location when online, but you should verify maps are cached before traveling to areas with poor connectivity.
+
+#### Peer-to-Peer Mesh Networking (MANET)
+- **Google Nearby Connections API**: Uses Bluetooth + WiFi Direct for device discovery
+- **P2P_CLUSTER Strategy**: Multi-peer mesh formation for network resilience
+- **Automatic Peer Discovery**: Finds nearby devices within ~100m range automatically
+- **Bidirectional Communication**: Full-duplex data exchange between mesh nodes
+- **Connection Lifecycle Management**: Handles disconnections and reconnections gracefully
+- **Tie-Breaker Logic**: Prevents connection collisions when two devices discover each other simultaneously
+
+#### Epidemic Routing Protocol
+- **Hop-Count Based Relay**: Packets travel up to 200 hops across the mesh network
+- **Duplicate Detection**: Uses `packetId` to prevent packet loops and redundant processing
+- **Automatic Rebroadcast**: Each device forwards received packets to all connected peers
+- **Tombstone Propagation**: Distributed delete operations — when a user cancels an SOS, a "tombstone" message spreads across the mesh to remove it from all devices
+- **Persistent Blocklist**: Prevents deleted packets from being reinserted by late-joining peers
+
+#### Local Storage & Packet Management
+- **AsyncStorage Persistence**: All SOS packets stored locally on each device
+- **Device UUID Tracking**: Unique identifier for origin tracking without accounts
+- **Origin-Based Deletion**: Users can only delete their own SOS packets
+- **Deleted Packet Blocklist**: Maintains a blacklist of cancelled SOS IDs to reject zombie packets
+
+#### Offline Maps
+> **[!] IMPORTANT**: Maps **must be downloaded while online** before offline mode can display them. The app auto-downloads tiles when connected to WiFi, but offline navigation will not work without pre-cached map data.
+
+- **OpenStreetMap Pre-Download**: Auto-downloads map tiles covering 50km radius (zoom 10-15) and 5km radius (zoom 16-17)
+- **WiFi-Only Download**: Preserves mobile data by downloading only on WiFi connections
+- **Base64 Tile Storage**: Stores tiles in AsyncStorage for instant retrieval
+- **Cache Validation**: Re-downloads if user moves >10km or cache is >30 days old
+- **Leaflet WebView Rendering**: Full-featured interactive maps with pinch-to-zoom, panning
+- **User Location Marker**: Shows current GPS position with heading indicator
+- **Download Progress Indicator**: Shows real-time download status (Downloading offline map... → Offline map ready)
+
+#### Offline Navigation
+> **[NOTE]**: Navigation requires pre-downloaded maps. Ensure maps are cached while online before entering offline mode.
+
+- **Haversine Distance Calculation**: Computes real-time distance to SOS without internet
+- **Cardinal Direction System**: N, NE, E, SE, S, SW, W, NW directional guidance
+- **Compass-Based Arrow Navigation**: On-screen arrow rotates based on device compass and target bearing
+- **Vibration Alerts**: Device vibrates when within 50m of destination
+- **GPS Tracking**: Native Geolocation API works offline (GPS satellites don't require internet)
+- **Real-Time Updates**: Distance and bearing update as user moves
+
+#### Offline AI Emergency Protocols
+- **50+ Embedded Protocols**: Pre-loaded emergency response instructions for cardiac arrest, choking, burns, fractures, drowning, allergic reactions, seizures, etc.
+- **Keyword-Based Triage**: Automatically detects life-threatening conditions from SOS descriptions
+- **Offline First-Aid Lookup**: Instant emergency guidance without internet
+- **No API Dependencies**: All AI logic runs locally on device
+
+#### Mesh Network Status Display
+- **Packet Counter**: Shows total SOS packets in local mesh network
+- **Peer Counter**: Displays number of directly connected devices
+- **Distance-Sorted Feed**: Lists all SOS alerts nearest-first based on GPS distance
+- **Device Name Display**: Shows unique device identifier for each mesh node
+
+---
+
+### [HYBRID] Hybrid Mode Features
+
+AetherNet uniquely runs **both modes simultaneously** — the mesh network operates in the background even when the online WebView is displayed.
+
+#### Mode Switching Guide
+
+The app features a **floating toggle button** in the bottom-right corner that allows instant switching between Online and Offline modes:
+
+**Button States:**
+- **🌐 (Globe Icon)**: Shows when currently in **Offline Mode** → Tap to switch to **Online Mode**
+- **📡 (Satellite Icon)**: Shows when currently in **Online Mode** → Tap to switch to **Offline Mode**
+
+**How it Works:**
+```
+Current View          Button Shows     Tap Action
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Offline Mesh          🌐 Globe         → Switch to Online Dashboard
+Online Dashboard      📡 Satellite     → Switch to Offline Mesh
+```
+
+**Important Notes:**
+- The button indicates **where you'll go**, not where you are
+- When viewing the **online dashboard** (WebView), the button shows 📡 to indicate you can switch back to offline
+- When viewing the **offline mesh interface**, the button shows 🌐 to indicate you can switch to online
+- Both systems run simultaneously — the mesh network continues operating in the background even when viewing the online dashboard
+- No app restart required — switching is instant
+
+#### Automatic Mode Switching
+- **Network State Detection**: `NetInfo` monitors connection type (WiFi, cellular, none)
+- **WiFi-Triggered Map Download**: Auto-downloads offline maps when on WiFi with invalid cache
+- **User Toggle Button**: Floating button switches between Offline (mesh) and Online (WebView) interfaces
+- **Background Mesh Operation**: Mesh network continues discovering peers and relaying packets even when WebView is active
+
+#### Advanced Features
+
+#### Adaptive Tile Download
+- **Connection-Aware**: Only downloads maps on WiFi to preserve mobile data
+- **Progress Indicator**: Shows download percentage and status
+- **Automatic Retry**: Re-attempts download if interrupted
+- **Cache Expiry**: 30-day validity ensures maps stay current
+
+---
+
+### Additional Platform Features
+
+#### SOS Types & Dynamic Modals
+- **6 Emergency Categories**: Medical, Car Problem, Fire, Gas Leak, Threat, General Help
+- **Context-Specific Forms**: Blood group auto-fill for Medical, car details for Car Problem, etc.
+- **False Alert Prevention**: Responders can flag fake SOS; 3+ flags = automatic suspension
+
+#### Cross-Platform Support
+- **React Native Android**: Native app sharing the same backend and socket infrastructure
+- **Shared Authentication**: One account works on both web dashboard and mobile app
+- **Push Notifications**: Responder alerts delivered natively on Android even when app is backgrounded
+- **One-Tap SOS**: Streamlined mobile UI for raising an SOS in seconds
 
 ---
 
@@ -175,9 +404,11 @@ Raise SOS (typed + contextual details)
 | Technology | Version | Purpose |
 |---|---|---|
 | **React Native** | Latest LTS | Cross-platform native Android app |
-| **Google Maps SDK** | Latest | Native GPS maps and location tracking |
+| **Leaflet (WebView)** | 1.9.4 | Offline maps rendering in WebView |
 | **Socket.IO Client** | 4.x | Shared real-time event layer with backend |
 | **React Navigation** | 6.x | In-app screen navigation |
+| **Google Nearby Connections** | Latest | Bluetooth + WiFi Direct mesh networking |
+| **AsyncStorage** | Latest | Local packet and tile storage |
 
 ---
 
@@ -280,16 +511,11 @@ GEMINI_API_KEY=your-google-gemini-api-key
 
 ### Mobile (Android) — `AetherNetMobile/`
 
-The mobile app uses the Google Maps SDK for native GPS rendering. You must provide your API key directly in the Android manifest:
+The mobile app uses **Leaflet maps** rendered in a WebView for both online and offline modes. For offline operation, map tiles are pre-downloaded and served locally.
 
-- **File:** `AetherNetMobile/android/app/src/main/AndroidManifest.xml`
-- **Tag:** `com.google.android.geo.API_KEY`
+**No Google Maps API key is required** — the app uses OpenStreetMap tiles via Leaflet.
 
-```xml
-<meta-data
-    android:name="com.google.android.geo.API_KEY"
-    android:value="YOUR_GOOGLE_MAPS_API_KEY_HERE" />
-```
+> **Note**: Earlier documentation incorrectly referenced Google Maps SDK. The app exclusively uses Leaflet for all mapping functionality.
 
 ## Getting Started
 
@@ -329,7 +555,7 @@ The web dashboard runs on `http://localhost:3000`.
 
 ### 3. Start the Mobile Application (Android)
 
-Before running, ensure you have added your Google Maps API Key to `AndroidManifest.xml` as described in [Environment Variables](#environment-variables).
+The mobile app uses Leaflet for mapping (no Google Maps API key needed).
 
 ```bash
 cd AetherNetMobile
@@ -428,4 +654,4 @@ npx react-native run-android
 
 ---
 
-*Built with ❤️ for community safety.*
+*Built for community safety.*
