@@ -18,68 +18,70 @@ async function reverseGeocode(lat, lng) {
     }
 
     try {
-        // Using OpenStreetMap Nominatim - free, no API key needed
-        // Respectful usage with user-agent header
+        // Attempt 1: OpenStreetMap Nominatim
         const response = await axios.get('https://nominatim.openstreetmap.org/reverse', {
             params: {
                 lat: lat,
                 lon: lng,
                 format: 'json',
                 addressdetails: 1,
-                zoom: 18, // Most detailed level
+                zoom: 18,
             },
             headers: {
                 'User-Agent': 'AetherNet-Emergency-App/1.0'
             },
-            timeout: 5000 // 5 second timeout
+            timeout: 5000
         });
 
         if (response.data && response.data.display_name) {
-            // Get the display name (full address)
             const fullAddress = response.data.display_name;
-            
-            // Try to extract more structured info if available
             const addr = response.data.address || {};
-            
-            // Build a concise but informative address
             let parts = [];
             
-            // Street-level info
             if (addr.road) parts.push(addr.road);
             if (addr.house_number) parts.unshift(addr.house_number);
-            
-            // Locality
             if (addr.neighbourhood) parts.push(addr.neighbourhood);
             else if (addr.suburb) parts.push(addr.suburb);
-            
-            // City/town
             if (addr.city) parts.push(addr.city);
             else if (addr.town) parts.push(addr.town);
             else if (addr.village) parts.push(addr.village);
-            
-            // State
             if (addr.state) parts.push(addr.state);
-            
-            // Postal code
             if (addr.postcode) parts.push(addr.postcode);
             
-            // If we got structured data, use it; otherwise use full address
             const structuredAddress = parts.length > 0 ? parts.join(', ') : fullAddress;
-            
-            console.log(`[Geocoding] ✅ Resolved: ${structuredAddress}`);
+            console.log(`[Geocoding] ✅ Nominatim Resolved: ${structuredAddress}`);
             return structuredAddress;
         }
-
-        // Fallback to coordinates if no address found
-        console.warn(`[Geocoding] ⚠️ No address found, using coordinates`);
-        return `GPS: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
-
     } catch (error) {
-        console.error('[Geocoding] ❌ Error:', error.message);
-        
-        // Fallback to raw coordinates on error
-        return `GPS: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+        console.warn(`[Geocoding] ⚠️ Nominatim failed (${error.message}), trying BigDataCloud fallback...`);
     }
+
+    try {
+        // Attempt 2: BigDataCloud (Free, no API key, Cloud-friendly)
+        const fallbackUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`;
+        const fallbackRes = await axios.get(fallbackUrl, { timeout: 5000 });
+        
+        if (fallbackRes.data && fallbackRes.data.city) {
+            const data = fallbackRes.data;
+            let parts = [];
+            
+            if (data.locality) parts.push(data.locality);
+            if (data.city && data.city !== data.locality) parts.push(data.city);
+            if (data.principalSubdivision) parts.push(data.principalSubdivision);
+            
+            if (parts.length > 0) {
+                const fallbackAddress = parts.join(', ');
+                console.log(`[Geocoding] ✅ BigDataCloud Resolved: ${fallbackAddress}`);
+                return fallbackAddress;
+            }
+        }
+    } catch (error) {
+        console.error(`[Geocoding] ❌ BigDataCloud failed too: ${error.message}`);
+    }
+
+    // Ultimate fallback
+    console.warn(`[Geocoding] ⚠️ All geocoders failed, using coordinates`);
+    return `GPS: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 }
 
 /**
