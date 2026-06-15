@@ -187,7 +187,7 @@ export default function AiAssistantCard({ guidance, activeSOS }: { guidance?: st
           contents: [
             {
               parts: [{ 
-                text: `You are an emergency crisis assistant. The user is asking: "${text}". Provide clear, concise, actionable emergency guidance. If it's a medical emergency, give first aid steps. If it's a safety threat, give safety instructions. Include relevant emergency numbers for India (Police: 100, Fire: 101, Ambulance: 108, National Emergency: 112).`
+                text: `You are an emergency crisis assistant. The user is asking: "${text}". Provide clear, concise, actionable emergency guidance. If it's a medical emergency, give first aid steps. If it's a safety threat, give safety instructions. Include relevant emergency numbers for India (Police: 100, Fire: 101, Ambulance: 108, National Emergency: 112). CRITICAL: If the user's query is NOT related to an emergency, safety, first-aid, or crisis situation, you MUST refuse to answer it completely. Respond ONLY with "This is not an emergency or safety-related question. I am an AI Crisis Assistant and can only provide guidance for emergencies, first-aid, and safety threats." Do NOT provide any other information.`
               }]
             }
           ]
