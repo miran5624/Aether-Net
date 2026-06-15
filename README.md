@@ -477,7 +477,7 @@ Aether-Net/
 └── AetherNetMobile/            # React Native Android application
     ├── android/
     │   └── app/src/main/
-    │       └── AndroidManifest.xml   # Google Maps API key configured here
+    │       └── AndroidManifest.xml   
     ├── src/
     │   ├── screens/            # App screens (Home, SOS, Map, Chat, Profile)
     │   ├── components/         # Shared React Native UI components
@@ -512,10 +512,6 @@ GEMINI_API_KEY=your-google-gemini-api-key
 ### Mobile (Android) — `AetherNetMobile/`
 
 The mobile app uses **Leaflet maps** rendered in a WebView for both online and offline modes. For offline operation, map tiles are pre-downloaded and served locally.
-
-**No Google Maps API key is required** — the app uses OpenStreetMap tiles via Leaflet.
-
-> **Note**: Earlier documentation incorrectly referenced Google Maps SDK. The app exclusively uses Leaflet for all mapping functionality.
 
 ## Getting Started
 
