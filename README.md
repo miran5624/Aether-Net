@@ -524,6 +524,18 @@ The mobile app uses **Leaflet maps** rendered in a WebView for both online and o
 
 ---
 
+### Admin Dashboard Access
+
+The admin dashboard provides comprehensive platform management and analytics capabilities.
+
+**Admin Credentials:**
+- **Email/ID:** `municipal@community.gov.in`
+- **Password:** `municipal@community.gov.in`
+
+> **Security Note:** These are default credentials for demonstration purposes. In production, ensure you change these credentials immediately and implement proper secure password policies.
+
+---
+
 ### 1. Start the Backend
 
 ```bash
